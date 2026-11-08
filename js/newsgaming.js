@@ -64,6 +64,13 @@
       // Egress de los aviones tras el lanzamiento
       this.egressActive = false;
       this.egressOffset = 0;
+
+      // Sprites de misiles antibuque cargados
+      this.missileAssets = null;
+    }
+
+    init(assets) {
+      this.missileAssets = (assets && assets.missiles) || null;
     }
 
     setRadio(speaker, text, duration = 4.5) {
@@ -128,20 +135,20 @@
 
       // Crear misil de Mayora (jugador) desprendiéndose del pilón derecho
       const sheffield = enemiesLayer && enemiesLayer.ships ? enemiesLayer.ships[0] : null;
-      const targetX = sheffield ? sheffield.x : 0;
-      const targetZ = sheffield ? sheffield.z : 900;
+      const targetX = sheffield ? sheffield.x : -80.0;
+      const targetZ = sheffield ? sheffield.z : 1200;
 
       this.missiles.push({
         id: "MAYORA_AM39",
         owner: "player",
-        x: 16.0,
-        y: flight.altitudeMeters - 1.2,
-        z: 75.0,
+        x: 14.0,
+        y: Math.max(3.0, flight.altitudeMeters - 1.2),
+        z: 60.0,
         vx: 0,
-        vy: -7.5, // Cae por gravedad inicialmente
-        vz: 350.0, // Velocidad inicial antes de acelerar
+        vy: -4.5, // Cae por gravedad inicialmente
+        vz: 360.0, // Velocidad inicial antes de acelerar
         engineLit: false,
-        igniteTimer: 0.82, // Cae durante ~0.8s antes de encender booster
+        igniteTimer: 0.45, // Cae durante ~0.45s antes de encender booster
         smokeTimer: 0,
         hit: false,
         targetX: targetX,
@@ -241,23 +248,23 @@
               4.0
             );
 
-            // Bedacarratz (Líder) lanza su misil primero
+            // Bedacarratz (Líder) lanza su misil primero desde su aeronave en formación (Z=260)
             if (!this.leaderLaunched) {
               this.leaderLaunched = true;
               this.missiles.push({
                 id: "BEDACARRATZ_AM39",
                 owner: "leader",
-                x: -65.0,
-                y: 11.5,
-                z: 110.0,
-                vx: -8.0,
-                vy: -6.0,
-                vz: 340.0,
+                x: -73.0,
+                y: 12.0,
+                z: 260.0,
+                vx: -3.0,
+                vy: -4.5,
+                vz: 380.0,
                 engineLit: false,
-                igniteTimer: 0.65,
+                igniteTimer: 0.35,
                 smokeTimer: 0,
                 hit: false,
-                targetX: sheffield ? sheffield.x - 30 : -110,
+                targetX: sheffield ? sheffield.x - 26 : -106,
                 targetZ: sheffield ? sheffield.z : 1300,
               });
               if (Malvinas.sound) {
@@ -286,90 +293,10 @@
         }
 
         case STAGES.MISSILE_FLIGHT: {
-          // El Exocet de Mayora y el de Bedacarratz vuelan hacia el blanco
-          let anyMissileAlive = false;
-
-          for (let i = 0; i < this.missiles.length; i++) {
-            const m = this.missiles[i];
-            if (m.hit) continue;
-
-            anyMissileAlive = true;
-
-            // Ignición tras caída libre
-            if (!m.engineLit) {
-              m.igniteTimer -= dt;
-              m.y += m.vy * dt;
-              m.z += m.vz * dt;
-              // No dejar caer por debajo de 2.5m de rasante
-              if (m.y < 2.5) m.y = 2.5;
-
-              if (m.igniteTimer <= 0) {
-                m.engineLit = true;
-                m.vz = 720.0; // Mach 0.93 (~315 m/s)
-                m.vy = 0;
-                if (Malvinas.sound) {
-                  Malvinas.sound.playRocketIgnition();
-                }
-              }
-            } else {
-              // Vuelo rasante a 2.5m del agua guiado hacia el blanco
-              m.z += m.vz * dt;
-              m.y += (2.5 - m.y) * Math.min(1, 5 * dt);
-
-              // Guiado terminal hacia la posición X del Sheffield
-              if (sheffield) {
-                const targetOffset = m.owner === "player" ? 0 : -25;
-                m.x += (sheffield.x + targetOffset - m.x) * Math.min(1, 4.5 * dt);
-              }
-
-              // Emisión de partículas de humo de propulsante sólido
-              m.smokeTimer += dt;
-              if (m.smokeTimer >= 0.02) {
-                m.smokeTimer = 0;
-                this.missileSmokeParticles.push({
-                  x: m.x + (Math.random() * 2 - 1) * 1.5,
-                  y: m.y + (Math.random() * 2 - 1) * 0.8,
-                  z: m.z - 6.0,
-                  life: 1.0,
-                  maxLife: 0.8 + Math.random() * 0.4,
-                  radius: 1.8 + Math.random() * 1.5,
-                });
-              }
-
-              // Comprobar impacto en el Sheffield
-              if (sheffield && m.z >= sheffield.z - 15) {
-                m.hit = true;
-                if (m.owner === "player") {
-                  // IMPACTO HISTÓRICO CONFIRMADO
-                  this.stage = STAGES.IMPACT_AND_FIRE;
-                  this.timeInStage = 0;
-                  this.egressActive = true;
-
-                  if (sheffield) {
-                    sheffield.damageState = 1;
-                    sheffield.explosionFrame = 0;
-                    sheffield.hp = 0;
-                  }
-
-                  if (Malvinas.sound) {
-                    Malvinas.sound.playShipImpact();
-                  }
-
-                  this.setRadio(
-                    "HISTORIA",
-                    "¡IMPACTO DIRECTO! Penetra banda de estribor a 2.5m sobre la flotación. Fuego incontrolable.",
-                    6.0
-                  );
-                }
-              }
-            }
-          }
-
           // Egress de la formación de Super Étendard alejándose
           if (this.egressActive) {
             this.egressOffset += 18.0 * dt;
           }
-
           break;
         }
 
@@ -398,6 +325,11 @@
         }
       }
 
+      // Actualizar física y trayectoria 3D de misiles en vuelo
+      if (this.missiles.length > 0) {
+        this._updateMissiles(dt, sheffield);
+      }
+
       // Actualizar partículas de humo del Exocet
       for (let i = this.missileSmokeParticles.length - 1; i >= 0; i--) {
         const p = this.missileSmokeParticles[i];
@@ -409,24 +341,101 @@
       }
     }
 
+    _updateMissiles(dt, sheffield) {
+      for (let i = 0; i < this.missiles.length; i++) {
+        const m = this.missiles[i];
+        if (m.hit) continue;
+
+        // 1. Desprendimiento y caída gravitatoria previa a ignición
+        if (!m.engineLit) {
+          m.igniteTimer -= dt;
+          m.y += m.vy * dt;
+          m.z += m.vz * dt;
+          m.x += m.vx * dt;
+          if (m.y < 2.5) m.y = 2.5;
+
+          if (m.igniteTimer <= 0) {
+            m.engineLit = true;
+            m.engineTime = 0;
+            m.vz = 740.0; // Velocidad de crucero Mach 0.93 (~315 m/s)
+            m.vy = 0;
+            if (Malvinas.sound) {
+              Malvinas.sound.playRocketIgnition();
+            }
+          }
+        } else {
+          // 2. Vuelo rasante a 2.5m del mar guiado al destructor
+          m.engineTime = (m.engineTime || 0) + dt;
+          m.z += m.vz * dt;
+          m.y += (2.5 - m.y) * Math.min(1, 6 * dt);
+
+          if (sheffield) {
+            const targetX = m.owner === "player" ? sheffield.x : sheffield.x - 26;
+            m.x += (targetX - m.x) * Math.min(1, 4.2 * dt);
+          }
+
+          // Emisión de humo denso de propulsante sólido
+          m.smokeTimer += dt;
+          if (m.smokeTimer >= 0.02) {
+            m.smokeTimer = 0;
+            this.missileSmokeParticles.push({
+              x: m.x + (Math.random() * 2 - 1) * 1.2,
+              y: m.y + (Math.random() * 2 - 1) * 0.6,
+              z: m.z - 5.0,
+              life: 0.85,
+              maxLife: 0.85,
+              radius: 1.4 + Math.random() * 1.2,
+            });
+          }
+
+          // Comprobar impacto en el Sheffield
+          if (sheffield && m.z >= sheffield.z - 12) {
+            m.hit = true;
+            if (m.owner === "player") {
+              this.stage = STAGES.IMPACT_AND_FIRE;
+              this.timeInStage = 0;
+              this.egressActive = true;
+
+              sheffield.damageState = 1;
+              sheffield.explosionFrame = 0;
+              sheffield.hp = 0;
+
+              if (Malvinas.sound) {
+                Malvinas.sound.playShipImpact();
+              }
+
+              this.setRadio(
+                "HISTORIA",
+                "¡IMPACTO DIRECTO! Penetra banda de estribor a 2.5m sobre la flotación. Fuego incontrolable.",
+                6.0
+              );
+            }
+          }
+        }
+      }
+    }
+
     render(ctx, camera, projectWorldPoint) {
-      // 1. Renderizar partículas de humo del Exocet en perspectiva 3D
       ctx.save();
+
+      // 1. Renderizar partículas de humo del Exocet en perspectiva 3D
       for (let i = 0; i < this.missileSmokeParticles.length; i++) {
         const p = this.missileSmokeParticles[i];
         const proj = projectWorldPoint(p.x, p.y, p.z, camera);
         if (!proj) continue;
 
-        const alpha = Math.max(0, p.life / p.maxLife) * 0.75;
-        const rad = Math.max(1.5, p.radius * proj.scale * 2.8);
+        const alpha = Math.max(0, p.life / p.maxLife) * 0.65;
+        const rad = Math.max(1.0, Math.min(12, p.radius * proj.scale * 1.8));
 
-        ctx.fillStyle = `rgba(240, 245, 255, ${alpha})`;
+        ctx.fillStyle = `rgba(235, 242, 255, ${alpha})`;
         ctx.beginPath();
         ctx.arc(proj.screenX, proj.screenY, rad, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      // 2. Renderizar misiles Exocet AM-39 en 3D
+      // 2. Renderizar misiles Exocet AM-39 en 3D con proporciones auténticas y pixel-art 16 bits
+      const ma = this.missileAssets;
+
       for (let i = 0; i < this.missiles.length; i++) {
         const m = this.missiles[i];
         if (m.hit) continue;
@@ -434,55 +443,91 @@
         const proj = projectWorldPoint(m.x, m.y, m.z, camera);
         if (!proj) continue;
 
-        const mW = Math.max(5, 48 * proj.scale);
-        const mH = Math.max(2, 14 * proj.scale);
+        const mx = Math.round(proj.screenX);
+        const my = Math.round(proj.screenY);
 
-        // Cuerpo del Exocet AM-39 (blanco / gris naval con aletas cruciformes)
-        ctx.fillStyle = "#e2e8f0";
-        ctx.fillRect(
-          proj.screenX - mW * 0.5,
-          proj.screenY - mH * 0.5,
-          mW,
-          mH
-        );
+        // 2a. Estela de espuma y salpicadura rasante sobre el mar justo debajo del misil (a 2.5m de cota)
+        const seaProj = projectWorldPoint(m.x, 0.2, m.z, camera);
+        if (seaProj && m.engineLit) {
+          const seaW = Math.max(8, Math.round(28 * proj.scale));
+          const seaH = Math.max(1, Math.round(5 * proj.scale));
+          ctx.fillStyle = "rgba(225, 245, 255, 0.65)";
+          ctx.fillRect(Math.round(seaProj.screenX - seaW * 0.5), Math.round(seaProj.screenY), seaW, seaH);
+        }
 
-        // Ojiva cónica frontal
-        ctx.fillStyle = "#cbd5e1";
-        ctx.beginPath();
-        ctx.moveTo(proj.screenX + mW * 0.5, proj.screenY);
-        ctx.lineTo(proj.screenX + mW * 0.5 + mH * 0.6, proj.screenY);
-        ctx.lineTo(proj.screenX + mW * 0.5, proj.screenY + mH * 0.4);
-        ctx.closePath();
-        ctx.fill();
+        // 2b. Selección de sprite de pixel-art auténtico proporcionado
+        let sprite = null;
+        if (ma) {
+          if (!m.engineLit) {
+            sprite = m.owner === "leader" ? ma.misil || ma.misil1 : ma.misil1 || ma.misil;
+          } else {
+            if ((m.engineTime || 0) < 0.16 && ma.misil3) {
+              sprite = ma.misil3; // Anillo de choque e ignición cohete
+            } else if (m.owner === "leader" && ma.misil) {
+              sprite = ma.misil; // Vista en perspectiva 3/4 hacia el blanco
+            } else {
+              const pulse = Math.floor((m.engineTime || 0) * 14) % 2 === 0;
+              sprite = (pulse && ma.misil4) ? ma.misil4 : (ma.misil2 || ma.misil1);
+            }
+          }
+        }
 
-        // Aletas de estabilización
-        ctx.fillStyle = "#475569";
-        ctx.fillRect(
-          proj.screenX - mW * 0.2,
-          proj.screenY - mH * 0.9,
-          mW * 0.25,
-          mH * 1.8
-        );
+        if (sprite) {
+          const spriteW = Math.max(6, Math.min(36, Math.round(sprite.width * proj.scale * 0.16)));
+          const spriteH = Math.max(6, Math.round(spriteW * (sprite.height / sprite.width)));
+          ctx.drawImage(
+            sprite,
+            mx - (spriteW >> 1),
+            my - (spriteH >> 1),
+            spriteW,
+            spriteH
+          );
+        } else {
+          // Fallback procedural de alta precisión si los sprites no han cargado
+          const mW = Math.max(4, Math.min(32, Math.round(22 * proj.scale)));
+          const mH = Math.max(2, Math.min(7, Math.round(5.0 * proj.scale)));
 
-        // Llama del propulsor de cohete si está encendido
-        if (m.engineLit) {
-          const flameLen = (Math.random() * 0.6 + 0.8) * mW * 0.8;
-          ctx.fillStyle = "#ffb020";
+          if (m.engineLit) {
+            const flameLen = Math.max(4, Math.round(mW * 0.9));
+            const flameH = Math.max(2, Math.round(mH * 0.8));
+            ctx.fillStyle = "#ff6a00";
+            ctx.beginPath();
+            ctx.moveTo(mx - (mW >> 1), my - (flameH >> 1));
+            ctx.lineTo(mx - (mW >> 1) - flameLen, my);
+            ctx.lineTo(mx - (mW >> 1), my + (flameH >> 1));
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = "#fff7c2";
+            ctx.fillRect(
+              mx - (mW >> 1) - Math.round(flameLen * 0.5),
+              my - Math.max(1, flameH >> 2),
+              Math.round(flameLen * 0.5),
+              Math.max(1, flameH >> 1)
+            );
+          }
+
+          ctx.fillStyle = "#334155";
+          ctx.fillRect(mx - (mW >> 1), my, mW, Math.max(1, mH >> 1));
+          ctx.fillStyle = "#e2e8f0";
+          ctx.fillRect(mx - (mW >> 1), my - (mH >> 1), mW, Math.max(1, mH >> 1));
+          ctx.fillStyle = "#94a3b8";
+          ctx.fillRect(mx - (mW >> 1) + Math.round(mW * 0.3), my - (mH >> 1), Math.max(1, Math.round(mW * 0.15)), mH);
+
+          const noseW = Math.max(2, Math.round(mW * 0.22));
+          ctx.fillStyle = "#f8fafc";
           ctx.beginPath();
-          ctx.moveTo(proj.screenX - mW * 0.5, proj.screenY - mH * 0.4);
-          ctx.lineTo(proj.screenX - mW * 0.5 - flameLen, proj.screenY);
-          ctx.lineTo(proj.screenX - mW * 0.5, proj.screenY + mH * 0.4);
+          ctx.moveTo(mx + (mW >> 1), my - (mH >> 1));
+          ctx.lineTo(mx + (mW >> 1) + noseW, my);
+          ctx.lineTo(mx + (mW >> 1), my + (mH >> 1));
           ctx.closePath();
           ctx.fill();
 
-          // Núcleo blanco caliente
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(
-            proj.screenX - mW * 0.5 - flameLen * 0.4,
-            proj.screenY - mH * 0.2,
-            flameLen * 0.4,
-            mH * 0.4
-          );
+          const finH = Math.max(3, Math.round(mH * 1.8));
+          const finW = Math.max(1, Math.round(mW * 0.18));
+          ctx.fillStyle = "#1e293b";
+          ctx.fillRect(mx - Math.round(mW * 0.05), my - (finH >> 1), finW, finH);
+          ctx.fillRect(mx - (mW >> 1), my - Math.round(finH * 0.4), Math.max(1, finW), Math.round(finH * 0.8));
         }
       }
       ctx.restore();

@@ -120,6 +120,15 @@
       "barcoexplota7",
       "barcoexplota9",
     ],
+
+    // Misiles antibuque Exocet AM-39
+    missileKeys: [
+      "misil",
+      "misil1",
+      "misil2",
+      "misil3",
+      "misil4",
+    ],
   };
 
   function createCanvas(w, h) {
@@ -683,6 +692,7 @@
       ...SPRITE_COORDINATES.aircraftKeys,
       ...SPRITE_COORDINATES.shipKeys,
       ...SPRITE_COORDINATES.explosionKeys,
+      ...SPRITE_COORDINATES.missileKeys,
     ];
 
     const rawImages = {};
@@ -849,6 +859,17 @@
       shipsFlipped.barco10,
     ].filter(Boolean);
 
+    // Misiles antibuque Exocet AM-39
+    const missiles = {};
+    for (const k of SPRITE_COORDINATES.missileKeys) {
+      if (rawImages[k]) {
+        missiles[k] = extractCleanSprite(rawImages[k], null, {
+          autoTrim: true,
+          whiteThreshold: 248,
+        });
+      }
+    }
+
     const wavesObj = {
       swellLoop: swellFrames,
       gentleSwell: gentleSwellFrames,
@@ -878,6 +899,7 @@
       },
       clouds,
       aircraft,
+      missiles,
       enemies: {
         type42Destroyer: ships.barco4 || ships.barco || createPlaceholderDestroyerSprite(),
         ships,

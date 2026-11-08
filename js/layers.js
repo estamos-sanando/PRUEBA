@@ -32,14 +32,14 @@
   const VIEW_W = 640;
   const VIEW_H = 360;
 
-  const OVERSCAN_X = 88;
-  const OVERSCAN_Y = 84;
-  const WORLD_W = VIEW_W + OVERSCAN_X * 2; // 816 px
-  const WORLD_H = VIEW_H + OVERSCAN_Y * 2; // 528 px
-  const WORLD_CX = WORLD_W >> 1; // 408 px
+  const OVERSCAN_X = 120;
+  const OVERSCAN_Y = 120;
+  const WORLD_W = VIEW_W + OVERSCAN_X * 2; // 880 px
+  const WORLD_H = VIEW_H + OVERSCAN_Y * 2; // 600 px
+  const WORLD_CX = WORLD_W >> 1; // 440 px
   const HORIZON_SCREEN_Y = 148;
-  const HORIZON_WORLD_Y = HORIZON_SCREEN_Y + OVERSCAN_Y; // 232 px
-  const OCEAN_SCANLINES = WORLD_H - HORIZON_WORLD_Y; // 296 scanlines
+  const HORIZON_WORLD_Y = HORIZON_SCREEN_Y + OVERSCAN_Y; // 268 px
+  const OCEAN_SCANLINES = WORLD_H - HORIZON_WORLD_Y; // 332 scanlines
 
   const CAMERA_BASE_HEIGHT = 52.0;
   const FOCAL_LENGTH = 252.0;
@@ -89,7 +89,7 @@
     skyCanvas: null,
     skySeamlessCanvas: null,
     skyTilePeriod: 0,
-    skyDrawHeight: HORIZON_WORLD_Y + 16,
+    skyDrawHeight: HORIZON_WORLD_Y + 70,
 
     cloudSprites: [],
     cloudEntities: [],
@@ -97,11 +97,11 @@
     init(assets) {
       if (assets.skyCanvas) {
         const src = assets.skyCanvas;
-        // Panorama amplio de 1920px: las nubes de fondo se renderizan a escala
+        // Panorama amplio de 1920px: el degradado y las nubes lejanas se renderizan a escala
         // lejana y atmosférica, revelando el amplio cielo crepuscular de Malvinas
         const tileW = 1920;
         this.skyTilePeriod = tileW * 2;
-        this.skyDrawHeight = HORIZON_WORLD_Y + 16;
+        this.skyDrawHeight = HORIZON_WORLD_Y + 70;
 
         const c = document.createElement("canvas");
         c.width = this.skyTilePeriod;
@@ -129,22 +129,45 @@
       this.cloudSprites = cloudSprites;
 
       if (cloudSprites.length > 0) {
-        const count = 16;
+        // Distribuir los 10 assets de nubes en 3 estratos atmosféricos proporcionados
+        const count = 18;
         for (let i = 0; i < count; i++) {
           const plane = (i % 3) + 1;
-          const parallaxRatio = plane === 1 ? 0.06 : plane === 2 ? 0.12 : 0.22;
           const spr = cloudSprites[i % cloudSprites.length];
-          // Nubes a escala proporcionada (0.11 a 0.21) para que no sean gigantes
-          // y se sitúen en la atmósfera alta sin obstruir el horizonte
+          let scale, screenY, driftSpeed, alpha, parallaxRatio;
+
+          if (plane === 1) {
+            // Estrato 1: Cirros altos tenues (lejanos y lentos)
+            scale = 0.08 + Math.random() * 0.03;
+            screenY = 8 + Math.random() * 55;
+            driftSpeed = (0.2 + Math.random() * 0.2) * (Math.random() > 0.5 ? 1 : -1);
+            alpha = 0.60 + Math.random() * 0.15;
+            parallaxRatio = 0.05;
+          } else if (plane === 2) {
+            // Estrato 2: Altocúmulos medios
+            scale = 0.12 + Math.random() * 0.04;
+            screenY = 40 + Math.random() * 70;
+            driftSpeed = (0.35 + Math.random() * 0.3) * (Math.random() > 0.5 ? 1 : -1);
+            alpha = 0.75 + Math.random() * 0.15;
+            parallaxRatio = 0.11;
+          } else {
+            // Estrato 3: Estratocúmulos bajos costeros de Malvinas
+            scale = 0.15 + Math.random() * 0.04;
+            screenY = 90 + Math.random() * (HORIZON_WORLD_Y - 150);
+            driftSpeed = (0.5 + Math.random() * 0.4) * (Math.random() > 0.5 ? 1 : -1);
+            alpha = 0.80 + Math.random() * 0.15;
+            parallaxRatio = 0.19;
+          }
+
           this.cloudEntities.push({
             sprite: spr,
             plane,
             parallaxRatio,
-            scale: 0.10 + plane * 0.05,
+            scale,
             worldX: (Math.random() * 2 - 1) * 1600,
-            screenY: 8 + Math.random() * (HORIZON_WORLD_Y - 95),
-            driftSpeed: (0.4 + plane * 0.5) * (Math.random() > 0.5 ? 1 : -1),
-            alpha: 0.72 + plane * 0.08,
+            screenY,
+            driftSpeed,
+            alpha,
           });
         }
       }
@@ -163,6 +186,16 @@
     render(ctx, camera) {
       if (!this.enabled) return;
 
+      // Base continua de cielo crepuscular de Malvinas (garantiza cero huecos negros en alabeos extremos)
+      const grad = ctx.createLinearGradient(0, 0, 0, HORIZON_WORLD_Y + 4);
+      grad.addColorStop(0, "#2c163b");    // Violeta índigo profundo de la atmósfera alta
+      grad.addColorStop(0.35, "#703554"); // Rosa vinoso crepuscular
+      grad.addColorStop(0.65, "#d95f43"); // Coral atardecer
+      grad.addColorStop(0.85, "#f79646"); // Ámbar dorado
+      grad.addColorStop(1.0, "#f8c56c");  // Bruma cálida del horizonte
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, WORLD_W, HORIZON_WORLD_Y + 4);
+
       if (this.skySeamlessCanvas) {
         const period = this.skyTilePeriod;
         const parallaxX = (camera.heading * 260 + camera.x * 0.04) % period;
@@ -173,13 +206,6 @@
           baseDrawX += period;
         }
         ctx.drawImage(this.skySeamlessCanvas, baseDrawX, 0);
-      } else {
-        const grad = ctx.createLinearGradient(0, 0, 0, HORIZON_WORLD_Y);
-        grad.addColorStop(0, "#ff7b54");
-        grad.addColorStop(0.55, "#ffb26b");
-        grad.addColorStop(1, "#ffd56b");
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, WORLD_W, HORIZON_WORLD_Y);
       }
 
       for (let i = 0; i < this.cloudEntities.length; i++) {
@@ -241,39 +267,39 @@
       const bands = [
         {
           name: "far",
-          count: 24,
-          zMin: 850,
-          zMax: 2300,
-          swellWMin: 55, swellWMax: 95,
-          breakerWMin: 35, breakerWMax: 65,
-          splashWMin: 28, splashWMax: 48,
+          count: 28,
+          zMin: 1000,
+          zMax: 2400,
+          swellWMin: 22, swellWMax: 40,
+          breakerWMin: 16, breakerWMax: 28,
+          splashWMin: 14, splashWMax: 24,
         },
         {
           name: "upperMid",
-          count: 24,
-          zMin: 420,
-          zMax: 850,
-          swellWMin: 75, swellWMax: 125,
-          breakerWMin: 48, breakerWMax: 85,
-          splashWMin: 36, splashWMax: 60,
+          count: 26,
+          zMin: 450,
+          zMax: 1000,
+          swellWMin: 32, swellWMax: 54,
+          breakerWMin: 22, breakerWMax: 38,
+          splashWMin: 18, splashWMax: 32,
         },
         {
           name: "mid",
           count: 22,
-          zMin: 150,
-          zMax: 420,
-          swellWMin: 95, swellWMax: 160,
-          breakerWMin: 60, breakerWMax: 110,
-          splashWMin: 45, splashWMax: 75,
+          zMin: 160,
+          zMax: 450,
+          swellWMin: 42, swellWMax: 72,
+          breakerWMin: 28, breakerWMax: 48,
+          splashWMin: 22, splashWMax: 40,
         },
         {
           name: "near",
-          count: 18,
-          zMin: 32,
-          zMax: 150,
-          swellWMin: 120, swellWMax: 210,
-          breakerWMin: 75, breakerWMax: 130,
-          splashWMin: 55, splashWMax: 90,
+          count: 16,
+          zMin: 36,
+          zMax: 160,
+          swellWMin: 55, swellWMax: 95,
+          breakerWMin: 38, breakerWMax: 65,
+          splashWMin: 28, splashWMax: 52,
         },
       ];
 
@@ -288,7 +314,7 @@
           let type;
           let worldWidth;
 
-          if (rollType < 0.42) {
+          if (rollType < 0.44) {
             type = Math.random() < 0.55 ? "swellLoop" : "gentleSwell";
             worldWidth = band.swellWMin + Math.random() * (band.swellWMax - band.swellWMin);
           } else if (rollType < 0.78) {
@@ -307,7 +333,7 @@
             zMin: band.zMin,
             zMax: band.zMax,
             worldWidth,
-            animSpeed: 5.5 + Math.random() * 3.5,
+            animSpeed: 6.0 + Math.random() * 3.0,
             frameIndex: Math.random() * 6,
           });
         }
@@ -443,28 +469,31 @@
         if (!sprite) continue;
 
         // Ancho en pantalla proporcional a la escala 3D
-        const drawW = Math.max(8, Math.round(w.worldWidth * proj.scale));
+        const drawW = Math.max(6, Math.round(w.worldWidth * proj.scale));
 
         // Altura con escorzo rasante proporcional
-        // Las olas cercanas lucen imponentes (14-28px de altura), con espuma y cresta visible
-        const grazingFactor = 0.16 + 0.08 * Math.min(1.0, w.z / 800.0);
+        // Las olas lucen como auténtico oleaje oceánico continuo y rompientes proporcionadas
+        const grazingFactor = 0.11 + 0.05 * Math.min(1.0, w.z / 800.0);
         const naturalH = Math.round(drawW * (sprite.height / sprite.width) * grazingFactor);
-        const minH = w.z > 800 ? 2 : 4;
-        const maxH = Math.round(28 * Math.min(1.2, proj.scale));
-        const drawH = Math.max(minH, Math.min(maxH, naturalH));
+        const minH = w.z > 900 ? 1 : 2;
+        const maxLimit = w.z > 900 ? 3 : w.z > 450 ? 5 : w.z > 160 ? 8 : 13;
+        const drawH = Math.max(minH, Math.min(maxLimit, naturalH));
 
         // Base de la ola apoyada sobre la línea de agua en pantalla
         const drawX = Math.round(proj.screenX - drawW * 0.5);
-        const drawY = Math.round(proj.screenY - drawH * 0.88);
+        const drawY = Math.round(proj.screenY - drawH * 0.86);
 
         // Clamping estricto para que la cresta nunca sobrepase el horizonte hacia el cielo
         if (drawY + drawH > HORIZON_WORLD_Y && drawY < WORLD_H && drawX + drawW > 0 && drawX < WORLD_W) {
           const finalY = Math.max(HORIZON_WORLD_Y, drawY);
           const finalH = Math.max(1, (drawY + drawH) - finalY);
+          const sy = Math.max(0, Math.min(sprite.height - 1, Math.round((finalY - drawY) * (sprite.height / drawH))));
+          const sH = Math.max(1, Math.min(sprite.height - sy, Math.round(finalH * (sprite.height / drawH))));
+
           worldCtx.drawImage(
             sprite,
-            0, Math.round((finalY - drawY) * (sprite.height / drawH)),
-            sprite.width, Math.round(finalH * (sprite.height / drawH)),
+            0, sy,
+            sprite.width, sH,
             drawX, finalY, drawW, finalH
           );
         }
@@ -924,7 +953,9 @@
 
           if (sx > 20 && sx < VIEW_W - 20 && sy > 20 && sy < VIEW_H - 20) {
             const isHit = ship.damageState > 0;
-            const boxColor = isHit ? red : amber;
+            const isReadyToFire = news.stage === Malvinas.STAGES.COORDINATED_ATTACK && !news.playerLaunched;
+            const targetFlash = Math.sin(Date.now() * 0.014) > 0;
+            const boxColor = isHit ? red : (isReadyToFire ? (targetFlash ? "#ffffff" : amber) : amber);
             ctx.strokeStyle = boxColor;
             ctx.fillStyle = boxColor;
             ctx.lineWidth = 1;
@@ -962,6 +993,11 @@
             ctx.font = "bold 8px Consolas, monospace";
             ctx.textAlign = "center";
             ctx.fillText(statusText, sx, bY - 4);
+
+            if (isReadyToFire) {
+              ctx.fillStyle = targetFlash ? "#ffffff" : green;
+              ctx.fillText(targetFlash ? "▶ DISPARO AUTORIZADO ◀" : "LOCK EXOCET AM-39", sx, bY + targetH + 8);
+            }
           }
         }
       }
@@ -1006,55 +1042,51 @@
         ctx.fillRect(bx - 1, by - 1, 3, 3);
       }
 
-      // 5. Banner de Radio Histórica
+      // 5. Banner de Radio Histórica (Ubicado en la franja superior sin obstruir el horizonte)
       if (news.radioBanner && news.radioBanner.timer > 0) {
         ctx.save();
-        ctx.fillStyle = "rgba(5, 16, 32, 0.88)";
-        ctx.strokeStyle = "#57d7ff";
-        ctx.lineWidth = 1;
+        const bW = 460;
+        const bH = 20;
+        const bX = (VIEW_W - bW) * 0.5;
+        const bY = 32;
 
-        const bW = VIEW_W - 48;
-        const bH = 34;
-        const bX = 24;
-        const bY = 74;
-
+        ctx.fillStyle = "rgba(4, 14, 28, 0.65)";
         ctx.fillRect(bX, bY, bW, bH);
-        ctx.strokeRect(bX + 0.5, bY + 0.5, bW, bH);
+        ctx.strokeStyle = "rgba(87, 215, 255, 0.40)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(bX + 0.5, bY + 0.5, bW - 1, bH - 1);
 
-        ctx.font = "bold 8.5px Consolas, monospace";
-        ctx.fillStyle = "#ffbe42";
+        ctx.font = "bold 8px Consolas, monospace";
         ctx.textAlign = "left";
-        ctx.fillText("RADIO 2DA ESCUADRILLA — " + news.radioBanner.speaker, bX + 8, bY + 6);
+        const prefix = "📻 " + news.radioBanner.speaker + ": ";
+        ctx.fillStyle = "#ffbe42";
+        ctx.fillText(prefix, bX + 8, bY + 5);
 
+        const prefixW = ctx.measureText(prefix).width;
         ctx.fillStyle = "#e6f4ff";
-        ctx.fillText(news.radioBanner.text, bX + 8, bY + 18);
+        ctx.fillText(news.radioBanner.text, bX + 8 + prefixW, bY + 5);
         ctx.restore();
       }
 
-      // 6. Prompt de Lanzamiento Coordinado
+      // 6. Prompt Táctico de Lanzamiento Exocet (Aviónica HUD inferior no obstructiva)
       if (news.stage === Malvinas.STAGES.COORDINATED_ATTACK && !news.playerLaunched) {
         ctx.save();
-        const flash = Math.sin(Date.now() * 0.012) > 0;
-        ctx.fillStyle = flash ? "rgba(255, 60, 40, 0.92)" : "rgba(10, 25, 45, 0.92)";
-        ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 2;
-
-        const pW = 440;
-        const pH = 44;
+        const flash = Math.sin(Date.now() * 0.014) > 0;
+        const pW = 290;
+        const pH = 18;
         const pX = (VIEW_W - pW) * 0.5;
-        const pY = VIEW_H * 0.5 - 22;
+        const pY = 208; // Por debajo de la línea de mira al horizonte, dejando libre al destructor
 
+        ctx.fillStyle = "rgba(4, 14, 28, 0.50)";
         ctx.fillRect(pX, pY, pW, pH);
-        ctx.strokeRect(pX, pY, pW, pH);
+        ctx.strokeStyle = flash ? "rgba(255, 190, 66, 0.85)" : "rgba(77, 255, 145, 0.60)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(pX + 0.5, pY + 0.5, pW - 1, pH - 1);
 
-        ctx.font = "bold 13px Consolas, monospace";
-        ctx.fillStyle = "#ffffff";
-        ctx.textAlign = "center";
-        ctx.fillText("¡¡LANZAR EXOCET AHORA!!", VIEW_W * 0.5, pY + 8);
-
-        ctx.font = "bold 9.5px Consolas, monospace";
+        ctx.font = "bold 9px Consolas, monospace";
         ctx.fillStyle = flash ? "#ffffff" : "#ffbe42";
-        ctx.fillText("[PULSA ESPACIO / GATILLO O BOTÓN EXOCET]", VIEW_W * 0.5, pY + 26);
+        ctx.textAlign = "center";
+        ctx.fillText("▶ LANZAR EXOCET [ESPACIO / GATILLO] ◀", VIEW_W * 0.5, pY + 4);
         ctx.restore();
       }
 

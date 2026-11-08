@@ -173,6 +173,7 @@
         Layers.LAYER_ENEMIES.init(assets);
         Layers.LAYER_PLAYER.init(assets);
         Layers.LAYER_HUD.init(assets);
+        if (news && news.init) news.init(assets);
         syncToolbarButtons();
 
         if (bootOverlay) bootOverlay.classList.add("ready");
