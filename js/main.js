@@ -78,6 +78,14 @@
       });
     });
 
+    const btnFire = document.getElementById("btn-fire");
+    if (btnFire) {
+      btnFire.addEventListener("click", () => {
+        Layers.LAYER_ENEMIES.triggerAttack();
+        screenCanvas.focus();
+      });
+    }
+
     global.addEventListener("keydown", (e) => {
       if (e.code === "Digit1") toggleFeature("bg");
       else if (e.code === "Digit2") toggleFeature("ocean");
@@ -86,6 +94,9 @@
       else if (e.code === "Digit5") toggleFeature("player");
       else if (e.code === "Digit6") toggleFeature("hud");
       else if (e.code === "KeyC") toggleFeature("crt");
+      else if (e.code === "KeyE" || e.code === "KeyF") {
+        Layers.LAYER_ENEMIES.triggerAttack();
+      }
     });
 
     // ------------------------------------------------------------------------

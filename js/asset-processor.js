@@ -6,16 +6,12 @@
  *  1. Remoción inteligente de fondo blanco (#FFFFFF) mediante Flood-Fill desde
  *     bordes + cuantización alfa de 16 bits (preservando la espuma blanca #FFFFFF
  *     encerrada dentro de las crestas de las olas y la escarapela del avión).
- *  2. Extracción por coordenadas exactas de:
- *     - Base trapezoidal en perspectiva del océano (`oceano.png`) -> Desenrollado
- *       (UV Unwrapping) a textura seamless 512x256 Uint32Array + LUT de horizonte.
- *     - Tiras de animación de olas en loop continuo (`ola` .. `ola7`).
- *     - Rompientes (`ola8` .. `ola11`) y salpicaduras/espuma (`ola12` .. `ola14`).
- *     - Cielo con horizonte de islas (`cielo.png`), nubes parallax (`nube`..`nube9`)
- *       y sprites del caza (`AVION` .. `AVION6`).
- *  3. Soporte en vivo para arrastrar/soltar una hoja combinada (spritesheet única
- *     sobre fondo #FFFFFF) y extraer automáticamente el trapezoide superior y las
- *     tiras inferiores de olas.
+ *  2. Esculpido orgánico de faldas de olas (`sculptWaveSprite`): elimina los
+ *     cortes horizontales duros en la base azul de `ola`..`ola11` y perfila los
+ *     extremos laterales de las tiras anchas para fundirlas sin costuras sobre
+ *     el océano manteniendo 100% nítida la cresta y espuma pixel-art.
+ *  3. Desenrollado (UV Unwrap) de alta definición (1024x256 toroidal sin costura
+ *     de espejo central) a partir del trapezoide en perspectiva `oceano.png`.
  * ============================================================================
  */
 (function (global) {
@@ -24,9 +20,8 @@
   const Malvinas = (global.Malvinas = global.Malvinas || {});
 
   /**
-   * Matriz Bayer 4x4 clásica de 16 bits para fundir los bordes inferiores y
-   * laterales de las tiras anchas de olas (`ola`..`ola7`) sobre el mar sin usar
-   * desenfoque moderno (mantiene estética pixel-art pura de Sega Super Scaler).
+   * Matriz Bayer 4x4 para costuras toroidales pixel-art (preserva paleta exacta
+   * sin inventar colores borrosos en el wrap de la textura del mar).
    */
   const BAYER_4X4 = [
     [0 / 16, 8 / 16, 2 / 16, 10 / 16],
@@ -37,34 +32,33 @@
 
   /**
    * Tabla explícita de coordenadas de recorte (sx, sy, sw, sh) medida sobre los
-   * assets originales en pixel art para eliminar márgenes vacíos y alinear la
-   * línea de flotación (waterline) de todos los cuadros de animación.
+   * assets originales en pixel art.
    */
   const SPRITE_COORDINATES = {
-    // Cielo: recorta los 4px derechos vacíos y corta exactamente en la línea de horizonte (Y=432)
-    cielo: { sx: 0, sy: 0, sw: 1445, sh: 432 },
+    // Cielo: recorta márgenes laterales para evitar línea vertical de 1px al espejar y corta en el horizonte
+    cielo: { sx: 3, sy: 0, sw: 1438, sh: 430 },
 
     // Base trapezoidal en perspectiva del mar (superficie del océano)
     oceano: { sx: 15, sy: 36, sw: 1476, sh: 194 },
 
     // Tira continua de olas anchas (8 frames en loop continuo)
     waveSwellFrames: [
-      { key: "ola", sx: 0, sy: 38, sw: 367, sh: 100 },
-      { key: "ola1", sx: 0, sy: 25, sw: 365, sh: 140 },
-      { key: "ola2", sx: 0, sy: 20, sw: 363, sh: 158 },
-      { key: "ola3", sx: 0, sy: 22, sw: 359, sh: 178 },
-      { key: "ola4", sx: 0, sy: 20, sw: 363, sh: 167 },
-      { key: "ola5", sx: 0, sy: 7, sw: 361, sh: 176 },
-      { key: "ola6", sx: 0, sy: 44, sw: 361, sh: 131 },
-      { key: "ola7", sx: 0, sy: 53, sw: 365, sh: 98 },
+      { key: "ola", sx: 0, sy: 38, sw: 367, sh: 96 },
+      { key: "ola1", sx: 0, sy: 25, sw: 365, sh: 136 },
+      { key: "ola2", sx: 0, sy: 20, sw: 363, sh: 154 },
+      { key: "ola3", sx: 0, sy: 22, sw: 359, sh: 173 },
+      { key: "ola4", sx: 0, sy: 20, sw: 363, sh: 162 },
+      { key: "ola5", sx: 0, sy: 7, sw: 361, sh: 171 },
+      { key: "ola6", sx: 0, sy: 44, sw: 361, sh: 126 },
+      { key: "ola7", sx: 0, sy: 53, sw: 365, sh: 94 },
     ],
 
-    // Rompientes de cresta rizada (4 frames base -> loop de 6 pasos)
+    // Rompientes de cresta rizada (recorta los últimos 4px inferiores de borde oscuro)
     waveBreakerFrames: [
-      { key: "ola8", sx: 11, sy: 7, sw: 163, sh: 104 },
-      { key: "ola9", sx: 12, sy: 5, sw: 162, sh: 108 },
-      { key: "ola10", sx: 5, sy: 19, sw: 161, sh: 74 },
-      { key: "ola11", sx: 0, sy: 18, sw: 163, sh: 70 },
+      { key: "ola8", sx: 11, sy: 7, sw: 163, sh: 99 },
+      { key: "ola9", sx: 12, sy: 5, sw: 162, sh: 103 },
+      { key: "ola10", sx: 5, sy: 19, sw: 161, sh: 69 },
+      { key: "ola11", sx: 2, sy: 18, sw: 159, sh: 65 },
     ],
 
     // Salpicaduras de espuma / spray de alta velocidad
@@ -88,7 +82,7 @@
       "nube9",
     ],
 
-    // Sprites del avión caza (crucero, postcombustión, alabeo y maniobra evasiva)
+    // Sprites del avión caza
     aircraftKeys: [
       "AVION",
       "AVION1",
@@ -97,6 +91,34 @@
       "AVION4",
       "AVION5",
       "AVION6",
+    ],
+
+    // Buques navales (HMS Sheffield D80, fragatas y vistas lejanas / ángulo)
+    shipKeys: [
+      "barcolejos",
+      "barco",
+      "barco1",
+      "barco2",
+      "barco4",
+      "barco5",
+      "barco6",
+      "barco7",
+      "barco8",
+      "barco9",
+      "barco10",
+    ],
+
+    // Secuencia de impacto, explosión y hundimiento
+    explosionKeys: [
+      "barcoexplota",
+      "barcoexplota1",
+      "barcoexplota2",
+      "barcoexplota3",
+      "barcoexplota4",
+      "barcoexplota5",
+      "barcoexplota6",
+      "barcoexplota7",
+      "barcoexplota9",
     ],
   };
 
@@ -108,13 +130,13 @@
   }
 
   /**
-   * Carga un PNG desde `./Assets/<key>.png` cuando corre en servidor HTTP, o usa
-   * el manifiesto Base64 embebido cuando se abre vía `file://` para evitar que
-   * el navegador bloquee `ctx.getImageData()` por política de canvas contaminado (CORS).
+   * Carga un PNG desde `./Assets/<key>.png` en HTTP o desde `MALVINAS_ASSETS_MANIFEST`
+   * en `file://` para permitir `getImageData()` sin bloqueo CORS.
    */
   function loadRawImage(key) {
     const manifest = global.MALVINAS_ASSETS_MANIFEST || {};
-    const isFileProtocol = global.location && global.location.protocol === "file:";
+    const isFileProtocol =
+      global.location && global.location.protocol === "file:";
 
     function fromSrc(src) {
       return new Promise((resolve, reject) => {
@@ -139,13 +161,15 @@
   }
 
   /**
-   * Remueve el fondo blanco (#FFFFFF y halos casi blancos conectados al exterior)
-   * aplicando transparencia alfa real sin borrar la espuma blanca interior de las olas.
+   * Remueve el fondo blanco (#FFFFFF y halos exteriores) preservando la espuma
+   * blanca encerrada dentro del contorno azul oscuro de las olas.
    */
   function removeWhiteBackground(imageData, options) {
     const opts = options || {};
-    const whiteThreshold = opts.whiteThreshold !== undefined ? opts.whiteThreshold : 245;
-    const maxChromaDiff = opts.maxChromaDiff !== undefined ? opts.maxChromaDiff : 14;
+    const whiteThreshold =
+      opts.whiteThreshold !== undefined ? opts.whiteThreshold : 245;
+    const maxChromaDiff =
+      opts.maxChromaDiff !== undefined ? opts.maxChromaDiff : 14;
     const alphaSnap = opts.alphaSnap !== undefined ? opts.alphaSnap : 92;
 
     const data = imageData.data;
@@ -179,7 +203,6 @@
       }
     }
 
-    // Semillas en los 4 bordes y en cualquier píxel ya transparente del recorte
     for (let x = 0; x < w; x++) {
       enqueue(x);
       enqueue((h - 1) * w + x);
@@ -195,7 +218,6 @@
       }
     }
 
-    // Flood-Fill 8-conectado hacia píxeles blancos externos (#FFFFFF)
     while (head < tail) {
       const curr = queue[head++];
       const p = curr * 4;
@@ -215,31 +237,141 @@
       }
     }
 
-    // Cuantización alfa estilo arcade 16 bits: elimina halos semitransparentes blancos
     for (let i = 0; i < total; i++) {
       const p = i * 4;
       const a = data[p + 3];
       if (a === 0) continue;
-      if (a < alphaSnap) {
-        data[p + 3] = 0;
-      } else if (
+      if (
         a < 210 &&
-        data[p] > 235 &&
-        data[p + 1] > 235 &&
-        data[p + 2] > 235
+        data[p] > 232 &&
+        data[p + 1] > 232 &&
+        data[p + 2] > 232
       ) {
         data[p + 3] = 0;
+      } else if (opts.preserveSoftAlpha) {
+        if (a < 135) data[p + 3] = 0;
       } else {
-        data[p + 3] = 255;
+        data[p + 3] = a < alphaSnap ? 0 : 255;
       }
     }
 
     return imageData;
   }
 
+  function smoothstep(edge0, edge1, x) {
+    const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+    return t * t * (3 - 2 * t);
+  }
+
+  /**
+   * Esculpe la base y flancos de cada sprite de ola (`swell`, `breaker`, `splash`):
+   *  - Suaviza los trazos de contorno casi negros hacia azul cobalto marino para que
+   *    las olas no muestren bordes negros ni rayas oscuras en la lejanía.
+   *  - Elimina por completo el corte recto horizontal en la base inferior llevando
+   *    alfa -> 0 de forma progresiva antes del borde inferior en todas las columnas.
+   */
+  function sculptWaveSprite(imageData, waveMode) {
+    const d = imageData.data;
+    const w = imageData.width;
+    const h = imageData.height;
+
+    const SEA_R = 8;
+    const SEA_G = 132;
+    const SEA_B = 212;
+
+    for (let x = 0; x < w; x++) {
+      let topY = -1;
+      let botY = -1;
+      for (let y = 0; y < h; y++) {
+        if (d[(y * w + x) * 4 + 3] > 0) {
+          if (topY === -1) topY = y;
+          botY = y;
+        }
+      }
+      if (topY === -1 || botY <= topY) continue;
+
+      const normX = w > 1 ? x / (w - 1) : 0.5;
+      const edgeDist = Math.min(normX, 1.0 - normX);
+
+      let hFade = 1.0;
+      let spanScale = 1.0;
+      if (waveMode === "swell") {
+        hFade = smoothstep(0.0, 0.24, edgeDist);
+        spanScale = 0.34 + 0.66 * smoothstep(0.0, 0.3, edgeDist);
+      } else if (waveMode === "breaker") {
+        hFade = smoothstep(0.0, 0.08, edgeDist);
+      }
+
+      const rawSpan = botY - topY + 1;
+      const activeSpan = Math.max(3, rawSpan * spanScale);
+
+      for (let y = topY; y <= botY; y++) {
+        const p = (y * w + x) * 4;
+        if (d[p + 3] === 0) continue;
+
+        let r = d[p];
+        let g = d[p + 1];
+        let b = d[p + 2];
+
+        // Integrar contornos muy oscuros/negros al azul cobalto del Atlántico Sur
+        if (r < 36 && g < 92 && b < 175) {
+          r = Math.max(r, 6);
+          g = Math.max(g, 102);
+          b = Math.max(b, 194);
+          d[p] = r;
+          d[p + 1] = g;
+          d[p + 2] = b;
+        }
+
+        const isFoam =
+          (r > 135 && g > 205 && b > 230) || (g > 170 && b > 222);
+
+        const relY = (y - topY) / activeSpan;
+        const bottomPx = botY - y;
+        let vFade = 1.0;
+
+        if (waveMode === "swell") {
+          const startFade = isFoam ? 0.48 : 0.26;
+          if (relY > startFade) {
+            vFade = 1.0 - smoothstep(startFade, 0.88, relY);
+          }
+          if (bottomPx < 6) {
+            vFade *= smoothstep(0, 6, bottomPx);
+          }
+        } else if (waveMode === "breaker") {
+          const startFade = isFoam ? 0.58 : 0.38;
+          if (relY > startFade) {
+            vFade = 1.0 - smoothstep(startFade, 0.88, relY);
+          }
+          // Garantiza alfa = 0 estricto en las filas inferiores incluso en las colas finas
+          if (bottomPx < 7) {
+            vFade *= smoothstep(0, 7, bottomPx);
+          }
+        } else if (waveMode === "splash") {
+          if (h - 1 - y < 14 && !isFoam) {
+            vFade = smoothstep(0, 14, h - 1 - y);
+          }
+        }
+
+        const finalAlpha = Math.round(255 * hFade * vFade);
+        if (finalAlpha < 10) {
+          d[p + 3] = 0;
+        } else {
+          if (!isFoam && vFade < 0.9) {
+            const tint = (1.0 - vFade) * 0.72;
+            d[p] = Math.round(r * (1 - tint) + SEA_R * tint);
+            d[p + 1] = Math.round(g * (1 - tint) + SEA_G * tint);
+            d[p + 2] = Math.round(b * (1 - tint) + SEA_B * tint);
+          }
+          d[p + 3] = finalAlpha;
+        }
+      }
+    }
+  }
+
   /**
    * Extrae una subregión por coordenadas, limpia el fondo blanco (#FFFFFF) y
-   * opcionalmente aplica tramado Bayer 4x4 en la falda inferior/lateral (para tiras de olas).
+   * opcionalmente esculpe el contorno orgánico de ola o recorta bordes vacíos.
    */
   function extractCleanSprite(img, rect, options) {
     const opts = options || {};
@@ -257,7 +389,6 @@
     try {
       imgData = ctx.getImageData(0, 0, sw, sh);
     } catch (_securityErr) {
-      // Fallback seguro si el usuario inyecta una imagen externa sin CORS
       return canvas;
     }
 
@@ -265,7 +396,11 @@
       removeWhiteBackground(imgData, opts);
     }
 
-    // Auto-trim opcional de bordes transparentes (nubes y avión)
+    if (opts.waveMode) {
+      sculptWaveSprite(imgData, opts.waveMode);
+    }
+
+    // Auto-trim de márgenes transparentes para alinear la base exacta de cada ola
     if (opts.autoTrim) {
       const d = imgData.data;
       let minX = sw,
@@ -274,7 +409,7 @@
         maxY = -1;
       for (let y = 0; y < sh; y++) {
         for (let x = 0; x < sw; x++) {
-          if (d[(y * sw + x) * 4 + 3] > 0) {
+          if (d[(y * sw + x) * 4 + 3] > 10) {
             if (x < minX) minX = x;
             if (x > maxX) maxX = x;
             if (y < minY) minY = y;
@@ -292,45 +427,10 @@
       }
     }
 
-    // Tramado Bayer 4x4 pixel-art para fundir faldas de tiras de olas anchas en el océano
-    if (opts.ditherSkirt) {
-      const d = imgData.data;
-      const bottomFadePx = Math.max(8, (sh * 0.24) | 0);
-      const sideFadePx = Math.max(12, (sw * 0.11) | 0);
-      const pixelBlock = 2; // Escala de bloque de dither acorde al pixel art
-
-      for (let y = 0; y < sh; y++) {
-        const bottomDist = sh - 1 - y;
-        const vFactor =
-          bottomDist < bottomFadePx ? bottomDist / bottomFadePx : 1.0;
-
-        for (let x = 0; x < sw; x++) {
-          const p = (y * sw + x) * 4;
-          if (d[p + 3] === 0) continue;
-
-          const sideDist = Math.min(x, sw - 1 - x);
-          const hFactor = sideDist < sideFadePx ? sideDist / sideFadePx : 1.0;
-          const keepProb = vFactor * hFactor;
-
-          if (keepProb < 0.999) {
-            const threshold =
-              BAYER_4X4[((y / pixelBlock) | 0) & 3][((x / pixelBlock) | 0) & 3];
-            if (keepProb <= threshold) {
-              d[p + 3] = 0;
-            }
-          }
-        }
-      }
-    }
-
     ctx.putImageData(imgData, 0, 0);
     return canvas;
   }
 
-  /**
-   * Genera una copia espejada horizontalmente en pixel-art puro (para que las
-   * rompientes ricen tanto a babor como a estribor).
-   */
   function flipCanvasHorizontal(sourceCanvas) {
     const out = createCanvas(sourceCanvas.width, sourceCanvas.height);
     const ctx = out.getContext("2d");
@@ -342,11 +442,9 @@
   }
 
   /**
-   * Desenrolla (UV Unwrap) el trapezoide en perspectiva de `oceano.png` para obtener:
-   *  1. `tex32` (Uint32Array 512x256): Textura rectangular seamless en X e Y con los
-   *     colores exactos del pixel art original, lista para el motor de scanlines 1/Z.
-   *  2. `horizonLUT` (Uint8Array 64x3): Gradiente atmosférico cian->cobalto extraído
-   *     de la franja superior del horizonte en `oceano.png`.
+   * Desenrolla (UV Unwrap) el trapezoide en perspectiva de `oceano.png` a una
+   * textura de alta resolución `1024 x 256` con costura toroidal Bayer (sin espejo
+   * simétrico central, conservando el 100% de nitidez pixel-art en primer plano).
    */
   function buildOceanSurfaceData(oceanImg, rect) {
     const cleanTrap = extractCleanSprite(oceanImg, rect);
@@ -355,7 +453,6 @@
     const ctx = cleanTrap.getContext("2d", { willReadFrequently: true });
     const srcData = ctx.getImageData(0, 0, w, h).data;
 
-    // 1. Escanear bordes izquierdo y derecho reales de cada fila del trapezoide
     const rowSpans = [];
     for (let y = 0; y < h; y++) {
       let lx = -1;
@@ -373,26 +470,27 @@
         }
       }
       if (lx !== -1 && rx - lx > 64) {
-        // Margen interior de 4px para descartar píxeles de borde diagonal
         rowSpans.push({
           y: y,
-          lx: lx + 4,
-          rx: rx - 4,
+          lx: lx + 6,
+          rx: rx - 6,
         });
       }
     }
 
-    // Fallback defensivo si una imagen externa está vacía o bloqueada por CORS
     if (rowSpans.length === 0) {
       for (let y = 0; y < h; y++) {
         rowSpans.push({ y: y, lx: 0, rx: Math.max(1, w - 1) });
       }
     }
 
-    // 2. Extraer LUT atmosférica del horizonte (primeras ~36 filas activas del trapezoide)
+    // 1. LUT atmosférica del horizonte (franja superior del trapezoide)
     const LUT_SIZE = 64;
     const horizonLUT = new Uint8Array(LUT_SIZE * 3);
-    const horizonSpanCount = Math.min(38, Math.max(8, (rowSpans.length * 0.22) | 0));
+    const horizonSpanCount = Math.min(
+      38,
+      Math.max(8, (rowSpans.length * 0.22) | 0)
+    );
     for (let i = 0; i < LUT_SIZE; i++) {
       const spanIdx = Math.min(
         rowSpans.length - 1,
@@ -406,38 +504,63 @@
       horizonLUT[i * 3 + 2] = srcData[p + 2];
     }
 
-    // 3. Construir mapa UV 512x256 (potencia de 2 para máscaras bit a bit ultrarrápidas)
-    //    usando el cuerpo rico en ondas del trapezoide ( ~38%..98% de altura ) con
-    //    wrapping espejo C0 en U y V para eliminar cualquier costura de tiling
-    //    preservando el 100% de la paleta pixel-art exacta.
-    const TEX_W = 512;
+    // 2. Textura 1024x256 directa con costura toroidal Bayer de 96px en U y 40px en V
+    //    (elimina por completo la línea de simetría central y cuadruplica el detalle)
+    const TEX_W = 1024;
     const TEX_H = 256;
-    const HALF_W = TEX_W >> 1;
-    const HALF_H = TEX_H >> 1;
+    const BLEND_U = 96;
+    const BLEND_V = 40;
 
     const texBuffer = new ArrayBuffer(TEX_W * TEX_H * 4);
     const texBytes = new Uint8ClampedArray(texBuffer);
     const tex32 = new Uint32Array(texBuffer);
 
-    const startRowIdx = Math.floor(rowSpans.length * 0.37);
+    const startRowIdx = Math.floor(rowSpans.length * 0.42);
     const endRowIdx = Math.max(startRowIdx + 8, rowSpans.length - 3);
     const bodyCount = endRowIdx - startRowIdx + 1;
 
+    function sampleTrapezoid(normU, normV) {
+      const rIdx =
+        startRowIdx + Math.min(bodyCount - 1, Math.max(0, (normV * bodyCount) | 0));
+      const span = rowSpans[rIdx];
+      const spanW = span.rx - span.lx;
+      const sx =
+        span.lx + Math.min(spanW, Math.max(0, (normU * spanW) | 0));
+      return (span.y * w + sx) * 4;
+    }
+
     for (let tv = 0; tv < TEX_H; tv++) {
-      // Espejo vertical suave: 0..127 avanza, 128..255 regresa sin salto de color
-      const pingPongV = tv < HALF_H ? tv : TEX_H - 1 - tv;
-      const normV = pingPongV / (HALF_H - 1);
-      const span = rowSpans[startRowIdx + ((normV * (bodyCount - 1)) | 0)];
-      const spanWidth = span.rx - span.lx;
+      // Coordenada V principal en [0 .. 0.84] con reserva [0.84 .. 1.0] para wrap toroidal
+      const uScale = 0.86;
+      const vScale = 0.84;
+      const baseNormV = (tv / TEX_H) * vScale;
 
-      // Ligero desfase horizontal en la mitad espejada sólo con wrap continuo
       for (let tu = 0; tu < TEX_W; tu++) {
-        const pingPongU = tu < HALF_W ? tu : TEX_W - 1 - tu;
-        const normU = pingPongU / (HALF_W - 1);
-        const sx = span.lx + ((normU * spanWidth) | 0);
-        const sp = (span.y * w + sx) * 4;
-        const dp = (tv * TEX_W + tu) * 4;
+        const baseNormU = (tu / TEX_W) * uScale;
+        const bayer = BAYER_4X4[(tv >> 1) & 3][(tu >> 1) & 3];
 
+        // Costura horizontal sin espejo: en los últimos BLEND_U píxeles enlaza con el borde derecho
+        let useWrapU = false;
+        if (tu >= TEX_W - BLEND_U) {
+          const tU = (tu - (TEX_W - BLEND_U)) / BLEND_U;
+          useWrapU = tU > bayer;
+        }
+        const finalU = useWrapU
+          ? uScale + ((tu - (TEX_W - BLEND_U)) / BLEND_U) * (1.0 - uScale)
+          : baseNormU + (1.0 - uScale);
+
+        // Costura vertical sin espejo
+        let useWrapV = false;
+        if (tv >= TEX_H - BLEND_V) {
+          const tV = (tv - (TEX_H - BLEND_V)) / BLEND_V;
+          useWrapV = tV > bayer;
+        }
+        const finalV = useWrapV
+          ? ((tv - (TEX_H - BLEND_V)) / BLEND_V) * (1.0 - vScale)
+          : baseNormV + (1.0 - vScale);
+
+        const sp = sampleTrapezoid(finalU, finalV);
+        const dp = (tv * TEX_W + tu) * 4;
         texBytes[dp] = srcData[sp];
         texBytes[dp + 1] = srcData[sp + 1];
         texBytes[dp + 2] = srcData[sp + 2];
@@ -451,24 +574,18 @@
       texHeight: TEX_H,
       texMaskU: TEX_W - 1,
       texMaskV: TEX_H - 1,
-      texShiftV: 9, // 2^9 = 512
+      texShiftV: 10, // 2^10 = 1024
       tex32: tex32,
       horizonLUT: horizonLUT,
       horizonLUTSize: LUT_SIZE,
     };
   }
 
-  /**
-   * Generador procedural de buque destructor en pixel art 16 bits (placeholder
-   * modular para `LAYER_ENEMIES` hasta que se incorporen los PNG definitivos de
-   * fragatas Tipo 42 / Tipo 22).
-   */
   function createPlaceholderDestroyerSprite() {
     const c = createCanvas(160, 64);
     const ctx = c.getContext("2d");
     ctx.imageSmoothingEnabled = false;
 
-    // Casco naval gris acero Atlántico Sur
     ctx.fillStyle = "#1c2838";
     ctx.beginPath();
     ctx.moveTo(10, 48);
@@ -483,14 +600,12 @@
     ctx.fillStyle = "#566e88";
     ctx.fillRect(18, 42, 68, 3);
 
-    // Superestructura puente + domo radar Tipo 42 (HMS Sheffield / Coventry silhouette)
     ctx.fillStyle = "#495d73";
     ctx.fillRect(46, 30, 58, 13);
     ctx.fillStyle = "#677f99";
     ctx.fillRect(52, 23, 24, 8);
     ctx.fillRect(84, 26, 14, 6);
 
-    // Domos blancos radar Sea Dart y mástil principal
     ctx.fillStyle = "#dce9f5";
     ctx.fillRect(57, 17, 7, 6);
     ctx.fillRect(90, 20, 6, 6);
@@ -498,9 +613,8 @@
     ctx.fillStyle = "#1a2430";
     ctx.fillRect(68, 8, 3, 16);
     ctx.fillRect(64, 11, 11, 2);
-    ctx.fillRect(80, 15, 6, 11); // Chimenea oscura
+    ctx.fillRect(80, 15, 6, 11);
 
-    // Línea de espuma blanca en la flotación del casco
     ctx.fillStyle = "#d9f7ff";
     ctx.fillRect(14, 57, 130, 2);
     ctx.fillStyle = "#7bd9ff";
@@ -509,11 +623,6 @@
     return c;
   }
 
-  /**
-   * Extractor en caliente desde una única hoja de sprites combinada con fondo blanco
-   * (#FFFFFF): detecta automáticamente la banda superior (trapezoide del océano) y
-   * las filas inferiores de frames de olas mediante proyección de filas/columnas.
-   */
   function extractFromCombinedSpritesheet(sheetImg) {
     const w = sheetImg.width;
     const h = sheetImg.height;
@@ -534,7 +643,6 @@
       rowCounts[y] = count;
     }
 
-    // Encontrar bandas horizontales separadas por filas vacías
     const bands = [];
     let inBand = false;
     let startY = 0;
@@ -550,7 +658,6 @@
     if (inBand && h - startY >= 16) bands.push({ y0: startY, y1: h - 1 });
     if (bands.length === 0) return null;
 
-    // Primera banda superior = Trapezoide base del océano
     const topBand = bands[0];
     const oceanData = buildOceanSurfaceData(c, {
       sx: 0,
@@ -559,7 +666,6 @@
       sh: topBand.y1 - topBand.y0 + 1,
     });
 
-    // Bandas inferiores = Tiras de cuadros de olas, rompientes y espuma
     const extractedFrames = [];
     for (let b = 1; b < bands.length; b++) {
       const band = bands[b];
@@ -585,7 +691,11 @@
               extractCleanSprite(
                 c,
                 { sx: startX, sy: band.y0, sw: bw, sh: bh },
-                { skipChromaKey: true, ditherSkirt: bw > bh * 1.6 }
+                {
+                  skipChromaKey: true,
+                  waveMode: bw > bh * 1.6 ? "swell" : "breaker",
+                  autoTrim: true,
+                }
               )
             );
           }
@@ -599,9 +709,6 @@
     };
   }
 
-  /**
-   * Carga y procesa todo el banco de assets del prototipo reportando progreso.
-   */
   async function loadAllAssets(onProgress) {
     const keysToLoad = [
       "cielo",
@@ -611,6 +718,8 @@
       ...SPRITE_COORDINATES.waveSplashFrames.map((f) => f.key),
       ...SPRITE_COORDINATES.cloudKeys,
       ...SPRITE_COORDINATES.aircraftKeys,
+      ...SPRITE_COORDINATES.shipKeys,
+      ...SPRITE_COORDINATES.explosionKeys,
     ];
 
     const rawImages = {};
@@ -629,32 +738,42 @@
       })
     );
 
-    // 1. Cielo con islas en el horizonte (sin transparencia interior)
     const skyCanvas = rawImages.cielo
       ? extractCleanSprite(rawImages.cielo, SPRITE_COORDINATES.cielo, {
           skipChromaKey: true,
         })
       : null;
 
-    // 2. Océano trapezoidal -> Desenrollado UV 512x256 + LUT de horizonte
     const oceanSurface = buildOceanSurfaceData(
       rawImages.oceano,
       SPRITE_COORDINATES.oceano
     );
 
-    // 3. Tira de animación de olas anchas en loop continuo (8 frames con falda Bayer)
+    // Olas anchas en loop continuo (`ola` .. `ola7`) con esculpido orgánico de falda
     const swellFrames = SPRITE_COORDINATES.waveSwellFrames
       .filter((item) => rawImages[item.key])
       .map((item) =>
         extractCleanSprite(rawImages[item.key], item, {
-          ditherSkirt: true,
+          waveMode: "swell",
+          autoTrim: true,
         })
       );
 
-    // 4. Rompientes (derecha + espejadas izquierda, loop suave de 6 cuadros)
+    // Subconjunto de oleaje suave (para media-larga distancia y nacimiento de ola)
+    const gentleSwellFrames =
+      swellFrames.length >= 8
+        ? [swellFrames[0], swellFrames[7], swellFrames[6], swellFrames[1]]
+        : swellFrames;
+
+    // Rompientes (`ola8` .. `ola11`) sin corte recto inferior
     const breakerRightRaw = SPRITE_COORDINATES.waveBreakerFrames
       .filter((item) => rawImages[item.key])
-      .map((item) => extractCleanSprite(rawImages[item.key], item));
+      .map((item) =>
+        extractCleanSprite(rawImages[item.key], item, {
+          waveMode: "breaker",
+          autoTrim: true,
+        })
+      );
 
     const breakerLoopRight =
       breakerRightRaw.length >= 4
@@ -670,22 +789,30 @@
 
     const breakerLoopLeft = breakerLoopRight.map(flipCanvasHorizontal);
 
-    // 5. Salpicaduras y espuma de alta velocidad
+    // Salpicaduras y espuma (`ola12` .. `ola14`)
     const splashFramesRight = SPRITE_COORDINATES.waveSplashFrames
       .filter((item) => rawImages[item.key])
-      .map((item) => extractCleanSprite(rawImages[item.key], item));
+      .map((item) =>
+        extractCleanSprite(rawImages[item.key], item, {
+          waveMode: "splash",
+          autoTrim: true,
+        })
+      );
     const splashFramesLeft = splashFramesRight.map(flipCanvasHorizontal);
 
-    // Secuencia completa rompiente -> explosión de espuma (7 cuadros)
     const fullCrestToSplashRight = [...breakerRightRaw, ...splashFramesRight];
-    const fullCrestToSplashLeft = fullCrestToSplashRight.map(flipCanvasHorizontal);
+    const fullCrestToSplashLeft =
+      fullCrestToSplashRight.map(flipCanvasHorizontal);
 
-    // 6. Nubes parallax limpias de halos #FFFFFF
     const clouds = SPRITE_COORDINATES.cloudKeys
       .filter((k) => rawImages[k])
-      .map((k) => extractCleanSprite(rawImages[k], null, { autoTrim: true }));
+      .map((k) =>
+        extractCleanSprite(rawImages[k], null, {
+          autoTrim: true,
+          preserveSoftAlpha: true,
+        })
+      );
 
-    // 7. Caza argentino en primer plano (`LAYER_PLAYER`)
     const aircraft = {};
     for (const k of SPRITE_COORDINATES.aircraftKeys) {
       if (rawImages[k]) {
@@ -696,11 +823,75 @@
       }
     }
 
+    // Buques navales (HMS Sheffield D80 y fragatas)
+    const ships = {};
+    const shipsFlipped = {};
+    for (const k of SPRITE_COORDINATES.shipKeys) {
+      if (rawImages[k]) {
+        const clean = extractCleanSprite(rawImages[k], null, {
+          autoTrim: true,
+          skipChromaKey: true,
+        });
+        ships[k] = clean;
+        shipsFlipped[k] = flipCanvasHorizontal(clean);
+      }
+    }
+
+    // Secuencia de impacto, explosión y hundimiento
+    const explosions = {};
+    const explosionsFlipped = {};
+    for (const k of SPRITE_COORDINATES.explosionKeys) {
+      if (rawImages[k]) {
+        const clean = extractCleanSprite(rawImages[k], null, {
+          autoTrim: true,
+          skipChromaKey: true,
+        });
+        explosions[k] = clean;
+        explosionsFlipped[k] = flipCanvasHorizontal(clean);
+      }
+    }
+
+    // Secuencia ordenada de hundimiento progresivo tras impacto
+    const explosionSeqKeys = [
+      "barcoexplota",
+      "barcoexplota1",
+      "barcoexplota2",
+      "barcoexplota3",
+      "barcoexplota4",
+      "barcoexplota5",
+      "barcoexplota6",
+      "barcoexplota7",
+      "barcoexplota9",
+    ];
+    const explosionSequence = explosionSeqKeys
+      .map((k) => explosions[k])
+      .filter(Boolean);
+    const explosionSequenceFlipped = explosionSeqKeys
+      .map((k) => explosionsFlipped[k])
+      .filter(Boolean);
+
+    // Tira de animación de estela/patrulla para buques cercanos
+    const shipWakeCycle = [
+      ships.barco4,
+      ships.barco7,
+      ships.barco8,
+      ships.barco9,
+      ships.barco10,
+    ].filter(Boolean);
+    const shipWakeCycleFlipped = [
+      shipsFlipped.barco4,
+      shipsFlipped.barco7,
+      shipsFlipped.barco8,
+      shipsFlipped.barco9,
+      shipsFlipped.barco10,
+    ].filter(Boolean);
+
     return {
       skyCanvas,
       ocean: oceanSurface,
       waves: {
         swellLoop: swellFrames,
+        gentleSwell: gentleSwellFrames,
         breakerRight: breakerLoopRight,
         breakerLeft: breakerLoopLeft,
         splashRight: splashFramesRight,
@@ -711,7 +902,15 @@
       clouds,
       aircraft,
       enemies: {
-        type42Destroyer: createPlaceholderDestroyerSprite(),
+        type42Destroyer: ships.barco4 || ships.barco || createPlaceholderDestroyerSprite(),
+        ships,
+        shipsFlipped,
+        explosions,
+        explosionsFlipped,
+        explosionSequence,
+        explosionSequenceFlipped,
+        shipWakeCycle,
+        shipWakeCycleFlipped,
       },
     };
   }
@@ -721,6 +920,7 @@
     loadAllAssets,
     extractCleanSprite,
     removeWhiteBackground,
+    sculptWaveSprite,
     buildOceanSurfaceData,
     extractFromCombinedSpritesheet,
   };
