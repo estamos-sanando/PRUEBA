@@ -158,6 +158,7 @@
       else if (e.code === "Digit5") toggleFeature("player");
       else if (e.code === "Digit6") toggleFeature("hud");
       else if (e.code === "KeyC") toggleFeature("crt");
+      else if (e.code === "KeyM") sound.toggleMute();
     });
 
     // ------------------------------------------------------------------------

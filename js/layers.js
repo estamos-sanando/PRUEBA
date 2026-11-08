@@ -493,17 +493,18 @@
       this.enemyAssets = assets.enemies || null;
 
       // HMS Sheffield (D80) ubicado inicialmente en el horizonte lejano
+      // Escala ampliada a 340 unidades para que luzca con presencia imponente de destructor Tipo 42
       this.ships = [
         {
           id: "D-80",
           designation: "HMS SHEFFIELD (D80)",
           type: "D80",
-          x: -60,
+          x: -80,
           y: 0,
           z: 2200, // En el horizonte, dentro del frustum
           vx: 8,
           vz: -20,
-          worldWidth: 145,
+          worldWidth: 340,
           wakeAnim: 0,
           hp: 100,
           damageState: 0,
@@ -550,27 +551,38 @@
           const fIdx = Math.min(seq.length - 1, ship.explosionFrame | 0);
           sprite = seq[fIdx];
         } else if (ea && ea.ships) {
-          if (ship.z > 1400) {
-            sprite = ea.ships.barcolejos;
-          } else if (ship.z > 720) {
-            sprite = (ship.wakeAnim | 0) % 2 === 0 ? ea.ships.barco1 : ea.ships.barco2;
+          // Visualización de alta definición del HMS Sheffield en todo el rango
+          // (se descarta barcolejos por ser un sprite de baja resolución)
+          if (ship.z > 1200) {
+            sprite = ea.ships.barco1 || ea.ships.barco || ea.ships.barco4;
+          } else if (ship.z > 700) {
+            sprite = (ship.wakeAnim | 0) % 2 === 0 ? ea.ships.barco1 : (ea.ships.barco4 || ea.ships.barco2);
           } else {
-            const wakeCycle = ea.shipWakeCycle || [];
-            const wIdx = (ship.wakeAnim | 0) % (wakeCycle.length || 1);
+            const wakeCycle = ea.shipWakeCycle && ea.shipWakeCycle.length > 0 ? ea.shipWakeCycle : [ea.ships.barco4];
+            const wIdx = (ship.wakeAnim | 0) % wakeCycle.length;
             sprite = wakeCycle[wIdx] || ea.ships.barco4;
           }
         }
 
         if (!sprite) continue;
 
-        const drawW = Math.max(12, Math.round(ship.worldWidth * proj.scale));
+        const drawW = Math.max(28, Math.round(ship.worldWidth * proj.scale));
         const aspect = sprite.height / sprite.width;
-        const drawH = Math.max(6, Math.round(drawW * aspect));
+        const drawH = Math.max(9, Math.round(drawW * aspect));
 
         const drawX = Math.round(proj.screenX - drawW * 0.5);
-        const drawY = Math.round(proj.screenY - drawH * 0.94);
+        // Base de la línea de flotación asentada en el agua
+        const drawY = Math.round(proj.screenY - drawH * 0.86);
 
         if (drawY + drawH > HORIZON_WORLD_Y && drawX + drawW > 0 && drawX < WORLD_W) {
+          // Espuma y estela de proa del buque sobre el agua para asentar la línea de flotación
+          const foamW = Math.round(drawW * 1.08);
+          const foamX = Math.round(drawX - drawW * 0.04);
+          const foamY = Math.round(proj.screenY - 1);
+          const foamH = Math.max(1, (drawH * 0.07) | 0);
+          ctx.fillStyle = "rgba(220, 245, 255, 0.50)";
+          ctx.fillRect(foamX, foamY, foamW, foamH);
+
           ctx.drawImage(sprite, drawX, drawY, drawW, drawH);
         }
       }
@@ -915,20 +927,41 @@
             const boxColor = isHit ? red : amber;
             ctx.strokeStyle = boxColor;
             ctx.fillStyle = boxColor;
+            ctx.lineWidth = 1;
 
-            const box = Math.max(12, Math.min(36, (200 * proj.scale) | 0));
-            ctx.strokeRect(
-              Math.round(sx - box * 0.5) + 0.5,
-              Math.round(sy - box * 0.65) + 0.5,
-              box,
-              box
-            );
+            // Retícula militar de fijado con corchetes en las esquinas [  ] adaptada al destructor
+            const targetW = Math.max(30, Math.round(ship.worldWidth * proj.scale * 1.06));
+            const targetH = Math.max(12, Math.round(targetW * 0.32));
+            const bX = Math.round(sx - targetW * 0.5);
+            const bY = Math.round(sy - targetH * 0.84 - 3);
+            const cLen = Math.min(6, Math.max(3, (targetW * 0.16) | 0));
+
+            // Esquinas tácticas de fijado
+            ctx.beginPath();
+            // Superior izquierda
+            ctx.moveTo(bX, bY + cLen);
+            ctx.lineTo(bX, bY);
+            ctx.lineTo(bX + cLen, bY);
+            // Superior derecha
+            ctx.moveTo(bX + targetW - cLen, bY);
+            ctx.lineTo(bX + targetW, bY);
+            ctx.lineTo(bX + targetW, bY + cLen);
+            // Inferior izquierda
+            ctx.moveTo(bX, bY + targetH - cLen);
+            ctx.lineTo(bX, bY + targetH);
+            ctx.lineTo(bX + cLen, bY + targetH);
+            // Inferior derecha
+            ctx.moveTo(bX + targetW - cLen, bY + targetH);
+            ctx.lineTo(bX + targetW, bY + targetH);
+            ctx.lineTo(bX + targetW, bY + targetH - cLen);
+            ctx.stroke();
 
             const statusText = isHit
               ? "HMS SHEFFIELD: INCENDIO"
               : "HMS SHEFFIELD " + Math.round(ship.z) + "M";
+            ctx.font = "bold 8px Consolas, monospace";
             ctx.textAlign = "center";
-            ctx.fillText(statusText, sx, sy - box * 0.65 - 10);
+            ctx.fillText(statusText, sx, bY - 4);
           }
         }
       }
