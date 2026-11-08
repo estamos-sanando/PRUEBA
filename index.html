@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Malvinas — Motor Océano Pseudo-3D Super Scaler (16-Bit)</title>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <main id="arcade-stage">
+      <div id="viewport-frame">
+        <!-- Pantalla de arranque mientras se procesa transparencia alfa (#FFFFFF -> 0) -->
+        <div id="boot-overlay">
+          <div id="boot-status">PROCESANDO SPRITES &amp; SCANLINES 16-BIT...</div>
+          <div class="boot-bar-track">
+            <div id="boot-bar-fill"></div>
+          </div>
+        </div>
+
+        <!-- Canvas principal pixel-art (640x360 escalado nítido sin deformar aspecto) -->
+        <canvas id="game-canvas" tabindex="0"></canvas>
+
+        <!-- Filtro opcional CRT 15kHz -->
+        <div id="crt-overlay" class="hidden"></div>
+
+        <!-- Botón táctil móvil para postcombustión / aceleración -->
+        <button id="touch-throttle-btn" type="button" aria-label="Acelerar">
+          TURBO<br />RASANTE
+        </button>
+
+        <!-- Barra modular de conmutación de las 5 capas desacopladas -->
+        <nav id="dev-toolbar" aria-label="Capas del motor">
+          <button class="layer-btn active" data-toggle="bg" title="Tecla 1">
+            [1] BG
+          </button>
+          <button class="layer-btn active" data-toggle="ocean" title="Tecla 2">
+            [2] OCEAN
+          </button>
+          <button class="layer-btn active" data-toggle="waves" title="Tecla 3">
+            [3] WAVES
+          </button>
+          <button class="layer-btn active" data-toggle="enemies" title="Tecla 4">
+            [4] ENEMIES
+          </button>
+          <button class="layer-btn active" data-toggle="player" title="Tecla 5">
+            [5] PLAYER
+          </button>
+          <button class="layer-btn active" data-toggle="hud" title="Tecla 6">
+            [6] HUD
+          </button>
+          <span class="toolbar-sep"></span>
+          <button class="layer-btn" data-toggle="crt" title="Tecla C">
+            [C] CRT
+          </button>
+        </nav>
+
+        <!-- Guía compacta de vuelo -->
+        <div class="controls-hint">
+          <kbd>←</kbd><kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd> Alabeo (±12°) &nbsp;|&nbsp;
+          <kbd>↑</kbd> / <kbd>W</kbd> Acelerar &nbsp;|&nbsp;
+          <kbd>Espacio</kbd> Tonel
+        </div>
+      </div>
+    </main>
+
+    <!-- Orden modular sin ES-Modules para compatibilidad total en file:// y HTTP -->
+    <script src="js/assets-manifest.js"></script>
+    <script src="js/asset-processor.js"></script>
+    <script src="js/controls.js"></script>
+    <script src="js/layers.js"></script>
+    <script src="js/main.js"></script>
+  </body>
+</html>
+
