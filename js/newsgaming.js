@@ -473,8 +473,8 @@
         }
 
         if (sprite) {
-          const spriteW = Math.max(6, Math.min(36, Math.round(sprite.width * proj.scale * 0.16)));
-          const spriteH = Math.max(6, Math.round(spriteW * (sprite.height / sprite.width)));
+          const spriteW = Math.max(8, Math.min(38, Math.round(sprite.width * proj.scale * 0.18)));
+          const spriteH = Math.max(4, Math.round(spriteW * (sprite.height / sprite.width)));
           ctx.drawImage(
             sprite,
             mx - (spriteW >> 1),
@@ -482,52 +482,35 @@
             spriteW,
             spriteH
           );
-        } else {
-          // Fallback procedural de alta precisión si los sprites no han cargado
-          const mW = Math.max(4, Math.min(32, Math.round(22 * proj.scale)));
-          const mH = Math.max(2, Math.min(7, Math.round(5.0 * proj.scale)));
 
           if (m.engineLit) {
-            const flameLen = Math.max(4, Math.round(mW * 0.9));
-            const flameH = Math.max(2, Math.round(mH * 0.8));
-            ctx.fillStyle = "#ff6a00";
+            const fLen = Math.max(4, Math.round(spriteW * 0.45));
+            ctx.fillStyle = "rgba(255, 160, 40, 0.75)";
             ctx.beginPath();
-            ctx.moveTo(mx - (mW >> 1), my - (flameH >> 1));
+            ctx.arc(mx - (spriteW >> 1), my, Math.max(2, spriteH * 0.35), 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else {
+          // Representación aerodinámica esbelta del misil Exocet rasante
+          const mW = Math.max(6, Math.min(24, Math.round(16 * proj.scale)));
+          const mH = Math.max(2, Math.min(5, Math.round(3.0 * proj.scale)));
+
+          if (m.engineLit) {
+            const flameLen = Math.max(4, Math.round(mW * 0.75));
+            ctx.fillStyle = "rgba(255, 175, 45, 0.85)";
+            ctx.beginPath();
+            ctx.moveTo(mx - (mW >> 1), my - (mH >> 1));
             ctx.lineTo(mx - (mW >> 1) - flameLen, my);
-            ctx.lineTo(mx - (mW >> 1), my + (flameH >> 1));
+            ctx.lineTo(mx - (mW >> 1), my + (mH >> 1));
             ctx.closePath();
             ctx.fill();
-
-            ctx.fillStyle = "#fff7c2";
-            ctx.fillRect(
-              mx - (mW >> 1) - Math.round(flameLen * 0.5),
-              my - Math.max(1, flameH >> 2),
-              Math.round(flameLen * 0.5),
-              Math.max(1, flameH >> 1)
-            );
           }
 
-          ctx.fillStyle = "#334155";
-          ctx.fillRect(mx - (mW >> 1), my, mW, Math.max(1, mH >> 1));
+          // Fuselaje esbelto en gris naval y ojiva blanca
+          ctx.fillStyle = "#64748b";
+          ctx.fillRect(mx - (mW >> 1), my - (mH >> 1), mW, mH);
           ctx.fillStyle = "#e2e8f0";
-          ctx.fillRect(mx - (mW >> 1), my - (mH >> 1), mW, Math.max(1, mH >> 1));
-          ctx.fillStyle = "#94a3b8";
-          ctx.fillRect(mx - (mW >> 1) + Math.round(mW * 0.3), my - (mH >> 1), Math.max(1, Math.round(mW * 0.15)), mH);
-
-          const noseW = Math.max(2, Math.round(mW * 0.22));
-          ctx.fillStyle = "#f8fafc";
-          ctx.beginPath();
-          ctx.moveTo(mx + (mW >> 1), my - (mH >> 1));
-          ctx.lineTo(mx + (mW >> 1) + noseW, my);
-          ctx.lineTo(mx + (mW >> 1), my + (mH >> 1));
-          ctx.closePath();
-          ctx.fill();
-
-          const finH = Math.max(3, Math.round(mH * 1.8));
-          const finW = Math.max(1, Math.round(mW * 0.18));
-          ctx.fillStyle = "#1e293b";
-          ctx.fillRect(mx - Math.round(mW * 0.05), my - (finH >> 1), finW, finH);
-          ctx.fillRect(mx - (mW >> 1), my - Math.round(finH * 0.4), Math.max(1, finW), Math.round(finH * 0.8));
+          ctx.fillRect(mx + (mW >> 1) - 3, my - (mH >> 1), 3, mH);
         }
       }
       ctx.restore();

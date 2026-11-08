@@ -535,7 +535,7 @@
       this.enemyAssets = assets.enemies || null;
 
       // HMS Sheffield (D80) ubicado inicialmente en el horizonte lejano
-      // Escala ampliada a 340 unidades para que luzca con presencia imponente de destructor Tipo 42
+      // Escala de 420 unidades para que el destructor Tipo 42 luzca con presencia imponente y nítida
       this.ships = [
         {
           id: "D-80",
@@ -546,7 +546,7 @@
           z: 2200, // En el horizonte, dentro del frustum
           vx: 8,
           vz: -20,
-          worldWidth: 340,
+          worldWidth: 420,
           wakeAnim: 0,
           hp: 100,
           damageState: 0,
@@ -593,12 +593,12 @@
           const fIdx = Math.min(seq.length - 1, ship.explosionFrame | 0);
           sprite = seq[fIdx];
         } else if (ea && ea.ships) {
-          // Visualización de alta definición del HMS Sheffield en todo el rango
-          // (se descarta barcolejos por ser un sprite de baja resolución)
-          if (ship.z > 1200) {
-            sprite = ea.ships.barco1 || ea.ships.barco || ea.ships.barco4;
-          } else if (ship.z > 700) {
-            sprite = (ship.wakeAnim | 0) % 2 === 0 ? ea.ships.barco1 : (ea.ships.barco4 || ea.ships.barco2);
+          // Visualización de alta definición del HMS Sheffield con el sprite de mayor resolución (barco4: 684x224)
+          // revelando el puente de mando, mástil de radar Type 965 y silueta militar sin pixelación
+          if (ship.z > 1000) {
+            sprite = ea.ships.barco4 || ea.ships.barco1 || ea.ships.barco;
+          } else if (ship.z > 500) {
+            sprite = (ship.wakeAnim | 0) % 2 === 0 ? (ea.ships.barco4 || ea.ships.barco1) : (ea.ships.barco6 || ea.ships.barco5);
           } else {
             const wakeCycle = ea.shipWakeCycle && ea.shipWakeCycle.length > 0 ? ea.shipWakeCycle : [ea.ships.barco4];
             const wIdx = (ship.wakeAnim | 0) % wakeCycle.length;
@@ -608,9 +608,9 @@
 
         if (!sprite) continue;
 
-        const drawW = Math.max(28, Math.round(ship.worldWidth * proj.scale));
+        const drawW = Math.max(36, Math.round(ship.worldWidth * proj.scale));
         const aspect = sprite.height / sprite.width;
-        const drawH = Math.max(9, Math.round(drawW * aspect));
+        const drawH = Math.max(12, Math.round(drawW * aspect));
 
         const drawX = Math.round(proj.screenX - drawW * 0.5);
         // Base de la línea de flotación asentada en el agua
@@ -974,13 +974,13 @@
             ctx.lineWidth = 1;
 
             // Retícula militar de fijado con corchetes en las esquinas [  ] adaptada al destructor
-            const targetW = Math.max(30, Math.round(ship.worldWidth * proj.scale * 1.06));
-            const targetH = Math.max(12, Math.round(targetW * 0.32));
+            const targetW = Math.max(42, Math.round(ship.worldWidth * proj.scale * 1.15));
+            const targetH = Math.max(16, Math.round(targetW * 0.36));
             const bX = Math.round(sx - targetW * 0.5);
-            const bY = Math.round(sy - targetH * 0.84 - 3);
-            const cLen = Math.min(6, Math.max(3, (targetW * 0.16) | 0));
+            const bY = Math.round(sy - targetH * 0.88 - 4);
+            const cLen = Math.min(7, Math.max(4, (targetW * 0.14) | 0));
 
-            // Esquinas tácticas de fijado
+            // Esquinas tácticas de fijado sin tapar la silueta central del destructor
             ctx.beginPath();
             // Superior izquierda
             ctx.moveTo(bX, bY + cLen);
@@ -1000,16 +1000,25 @@
             ctx.lineTo(bX + targetW, bY + targetH - cLen);
             ctx.stroke();
 
+            // Etiqueta táctica con fondo oscuro traslúcido para legibilidad perfecta sobre el cielo
             const statusText = isHit
               ? "HMS SHEFFIELD: INCENDIO"
               : "HMS SHEFFIELD " + Math.round(ship.z) + "M";
             ctx.font = "bold 8px Consolas, monospace";
+            const textW = ctx.measureText(statusText).width;
+            ctx.fillStyle = "rgba(4, 14, 28, 0.72)";
+            ctx.fillRect(Math.round(sx - textW * 0.5 - 4), bY - 14, Math.round(textW + 8), 11);
+            ctx.fillStyle = boxColor;
             ctx.textAlign = "center";
-            ctx.fillText(statusText, sx, bY - 4);
+            ctx.fillText(statusText, sx, bY - 5);
 
             if (isReadyToFire) {
+              const lockTxt = targetFlash ? "▶ DISPARO AUTORIZADO ◀" : "LOCK EXOCET AM-39";
+              const lockW = ctx.measureText(lockTxt).width;
+              ctx.fillStyle = "rgba(4, 14, 28, 0.72)";
+              ctx.fillRect(Math.round(sx - lockW * 0.5 - 4), bY + targetH + 3, Math.round(lockW + 8), 11);
               ctx.fillStyle = targetFlash ? "#ffffff" : green;
-              ctx.fillText(targetFlash ? "▶ DISPARO AUTORIZADO ◀" : "LOCK EXOCET AM-39", sx, bY + targetH + 8);
+              ctx.fillText(lockTxt, sx, bY + targetH + 11);
             }
           }
         }

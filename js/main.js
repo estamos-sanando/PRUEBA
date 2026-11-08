@@ -151,13 +151,7 @@
     }
 
     global.addEventListener("keydown", (e) => {
-      if (e.code === "Digit1") toggleFeature("bg");
-      else if (e.code === "Digit2") toggleFeature("ocean");
-      else if (e.code === "Digit3") toggleFeature("waves");
-      else if (e.code === "Digit4") toggleFeature("enemies");
-      else if (e.code === "Digit5") toggleFeature("player");
-      else if (e.code === "Digit6") toggleFeature("hud");
-      else if (e.code === "KeyC") toggleFeature("crt");
+      if (e.code === "KeyC") toggleFeature("crt");
       else if (e.code === "KeyM") sound.toggleMute();
     });
 
@@ -252,6 +246,8 @@
 
           // 8. Renderizar capas de mundo (Z-Index 10, 20, 30) en buffer con overscan
           worldCtx.imageSmoothingEnabled = false;
+          worldCtx.fillStyle = "#0c284e";
+          worldCtx.fillRect(0, 0, Config.WORLD_W, Config.WORLD_H);
           Layers.LAYER_BACKGROUND.render(worldCtx, camera);
           Layers.LAYER_OCEAN.render(worldCtx, camera);
           Layers.LAYER_ENEMIES.render(worldCtx, camera);

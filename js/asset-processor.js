@@ -480,8 +480,8 @@
       horizonLUT[i * 3 + 2] = srcData[p + 2];
     }
 
-    // 2. Textura 1024x256 toroidal continua con mapeo ping-pong simétrico
-    //    (garantiza que en tu=0 y tu=1023 el valor de normU sea 0.16 exacto, eliminando la costura central)
+    // 2. Textura 1024x256 toroidal continua con mapeo panorámico sin costura ni espejado central
+    //    (elimina por completo el efecto espejo por la mitad y los artefactos de cuadrícula dither)
     const TEX_W = 1024;
     const TEX_H = 256;
 
@@ -503,32 +503,51 @@
       return (span.y * w + sx) * 4;
     }
 
+    const U_MIN = 0.10;
+    const U_MAX = 0.90;
+    const U_SPAN = U_MAX - U_MIN;
+    const WRAP_U = 64; // Pixeles de transición para sellar el bucle horizontal 1024
+    const BLEND_V = 32; // Pixeles de transición vertical para bucle toroidal infinito
+
     for (let tv = 0; tv < TEX_H; tv++) {
       const vNorm = tv / TEX_H;
-      const vScale = 0.88;
-      const baseNormV = vNorm * vScale;
+      const baseNormV = vNorm * 0.88;
+      const isVBlending = tv >= TEX_H - BLEND_V;
+      const vBlendWeight = isVBlending
+        ? 0.5 * (1.0 - Math.cos(((tv - (TEX_H - BLEND_V)) / BLEND_V) * Math.PI))
+        : 0;
+      const topNormV = isVBlending ? ((tv - (TEX_H - BLEND_V)) / BLEND_V) * 0.14 : 0;
 
       for (let tu = 0; tu < TEX_W; tu++) {
-        // Enlace ping-pong simétrico continuo:
-        // tu=0 -> normU=0.16 | tu=512 -> normU=0.84 | tu=1023 -> normU=0.1613
-        const normU = 0.16 + 0.68 * (1.0 - Math.abs((tu / (TEX_W * 0.5)) - 1.0));
+        const primaryU = U_MIN + U_SPAN * (tu / TEX_W);
 
-        // Suave transición toroidal vertical
-        let finalV = baseNormV;
-        const bayer = BAYER_4X4[(tv >> 1) & 3][(tu >> 1) & 3];
-        const BLEND_V = 36;
-        if (tv >= TEX_H - BLEND_V) {
-          const tV = (tv - (TEX_H - BLEND_V)) / BLEND_V;
-          if (tV > bayer) {
-            finalV = tV * 0.12;
-          }
+        let spPrimary = sampleTrapezoid(primaryU, baseNormV);
+        let pr = srcData[spPrimary];
+        let pg = srcData[spPrimary + 1];
+        let pb = srcData[spPrimary + 2];
+
+        // Sellado toroidal horizontal (Crossfade en los primeros WRAP_U pixeles con el extremo derecho)
+        if (tu < WRAP_U) {
+          const wrapFactor = 0.5 * (1.0 - Math.cos((tu / WRAP_U) * Math.PI));
+          const wrapU = U_MAX - U_SPAN * ((WRAP_U - tu) / TEX_W);
+          const spWrap = sampleTrapezoid(wrapU, baseNormV);
+          pr = Math.round(srcData[spWrap] * (1 - wrapFactor) + pr * wrapFactor);
+          pg = Math.round(srcData[spWrap + 1] * (1 - wrapFactor) + pg * wrapFactor);
+          pb = Math.round(srcData[spWrap + 2] * (1 - wrapFactor) + pb * wrapFactor);
         }
 
-        const sp = sampleTrapezoid(normU, finalV);
+        // Sellado toroidal vertical suave (sin saltos bruscos ni dithering ajedrezado)
+        if (isVBlending) {
+          const spTop = sampleTrapezoid(primaryU, topNormV);
+          pr = Math.round(pr * (1 - vBlendWeight) + srcData[spTop] * vBlendWeight);
+          pg = Math.round(pg * (1 - vBlendWeight) + srcData[spTop + 1] * vBlendWeight);
+          pb = Math.round(pb * (1 - vBlendWeight) + srcData[spTop + 2] * vBlendWeight);
+        }
+
         const dp = (tv * TEX_W + tu) * 4;
-        texBytes[dp] = srcData[sp];
-        texBytes[dp + 1] = srcData[sp + 1];
-        texBytes[dp + 2] = srcData[sp + 2];
+        texBytes[dp] = pr;
+        texBytes[dp + 1] = pg;
+        texBytes[dp + 2] = pb;
         texBytes[dp + 3] = 255;
       }
     }

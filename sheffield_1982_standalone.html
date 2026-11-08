@@ -1419,8 +1419,8 @@ window.MALVINAS_ASSETS_MANIFEST = {
       horizonLUT[i * 3 + 2] = srcData[p + 2];
     }
 
-    // 2. Textura 1024x256 toroidal continua con mapeo ping-pong simétrico
-    //    (garantiza que en tu=0 y tu=1023 el valor de normU sea 0.16 exacto, eliminando la costura central)
+    // 2. Textura 1024x256 toroidal continua con mapeo panorámico sin costura ni espejado central
+    //    (elimina por completo el efecto espejo por la mitad y los artefactos de cuadrícula dither)
     const TEX_W = 1024;
     const TEX_H = 256;
 
@@ -1442,32 +1442,51 @@ window.MALVINAS_ASSETS_MANIFEST = {
       return (span.y * w + sx) * 4;
     }
 
+    const U_MIN = 0.10;
+    const U_MAX = 0.90;
+    const U_SPAN = U_MAX - U_MIN;
+    const WRAP_U = 64; // Pixeles de transición para sellar el bucle horizontal 1024
+    const BLEND_V = 32; // Pixeles de transición vertical para bucle toroidal infinito
+
     for (let tv = 0; tv < TEX_H; tv++) {
       const vNorm = tv / TEX_H;
-      const vScale = 0.88;
-      const baseNormV = vNorm * vScale;
+      const baseNormV = vNorm * 0.88;
+      const isVBlending = tv >= TEX_H - BLEND_V;
+      const vBlendWeight = isVBlending
+        ? 0.5 * (1.0 - Math.cos(((tv - (TEX_H - BLEND_V)) / BLEND_V) * Math.PI))
+        : 0;
+      const topNormV = isVBlending ? ((tv - (TEX_H - BLEND_V)) / BLEND_V) * 0.14 : 0;
 
       for (let tu = 0; tu < TEX_W; tu++) {
-        // Enlace ping-pong simétrico continuo:
-        // tu=0 -> normU=0.16 | tu=512 -> normU=0.84 | tu=1023 -> normU=0.1613
-        const normU = 0.16 + 0.68 * (1.0 - Math.abs((tu / (TEX_W * 0.5)) - 1.0));
+        const primaryU = U_MIN + U_SPAN * (tu / TEX_W);
 
-        // Suave transición toroidal vertical
-        let finalV = baseNormV;
-        const bayer = BAYER_4X4[(tv >> 1) & 3][(tu >> 1) & 3];
-        const BLEND_V = 36;
-        if (tv >= TEX_H - BLEND_V) {
-          const tV = (tv - (TEX_H - BLEND_V)) / BLEND_V;
-          if (tV > bayer) {
-            finalV = tV * 0.12;
-          }
+        let spPrimary = sampleTrapezoid(primaryU, baseNormV);
+        let pr = srcData[spPrimary];
+        let pg = srcData[spPrimary + 1];
+        let pb = srcData[spPrimary + 2];
+
+        // Sellado toroidal horizontal (Crossfade en los primeros WRAP_U pixeles con el extremo derecho)
+        if (tu < WRAP_U) {
+          const wrapFactor = 0.5 * (1.0 - Math.cos((tu / WRAP_U) * Math.PI));
+          const wrapU = U_MAX - U_SPAN * ((WRAP_U - tu) / TEX_W);
+          const spWrap = sampleTrapezoid(wrapU, baseNormV);
+          pr = Math.round(srcData[spWrap] * (1 - wrapFactor) + pr * wrapFactor);
+          pg = Math.round(srcData[spWrap + 1] * (1 - wrapFactor) + pg * wrapFactor);
+          pb = Math.round(srcData[spWrap + 2] * (1 - wrapFactor) + pb * wrapFactor);
         }
 
-        const sp = sampleTrapezoid(normU, finalV);
+        // Sellado toroidal vertical suave (sin saltos bruscos ni dithering ajedrezado)
+        if (isVBlending) {
+          const spTop = sampleTrapezoid(primaryU, topNormV);
+          pr = Math.round(pr * (1 - vBlendWeight) + srcData[spTop] * vBlendWeight);
+          pg = Math.round(pg * (1 - vBlendWeight) + srcData[spTop + 1] * vBlendWeight);
+          pb = Math.round(pb * (1 - vBlendWeight) + srcData[spTop + 2] * vBlendWeight);
+        }
+
         const dp = (tv * TEX_W + tu) * 4;
-        texBytes[dp] = srcData[sp];
-        texBytes[dp + 1] = srcData[sp + 1];
-        texBytes[dp + 2] = srcData[sp + 2];
+        texBytes[dp] = pr;
+        texBytes[dp + 1] = pg;
+        texBytes[dp + 2] = pb;
         texBytes[dp + 3] = 255;
       }
     }
@@ -2639,8 +2658,8 @@ window.MALVINAS_ASSETS_MANIFEST = {
         }
 
         if (sprite) {
-          const spriteW = Math.max(6, Math.min(36, Math.round(sprite.width * proj.scale * 0.16)));
-          const spriteH = Math.max(6, Math.round(spriteW * (sprite.height / sprite.width)));
+          const spriteW = Math.max(8, Math.min(38, Math.round(sprite.width * proj.scale * 0.18)));
+          const spriteH = Math.max(4, Math.round(spriteW * (sprite.height / sprite.width)));
           ctx.drawImage(
             sprite,
             mx - (spriteW >> 1),
@@ -2648,52 +2667,35 @@ window.MALVINAS_ASSETS_MANIFEST = {
             spriteW,
             spriteH
           );
-        } else {
-          // Fallback procedural de alta precisión si los sprites no han cargado
-          const mW = Math.max(4, Math.min(32, Math.round(22 * proj.scale)));
-          const mH = Math.max(2, Math.min(7, Math.round(5.0 * proj.scale)));
 
           if (m.engineLit) {
-            const flameLen = Math.max(4, Math.round(mW * 0.9));
-            const flameH = Math.max(2, Math.round(mH * 0.8));
-            ctx.fillStyle = "#ff6a00";
+            const fLen = Math.max(4, Math.round(spriteW * 0.45));
+            ctx.fillStyle = "rgba(255, 160, 40, 0.75)";
             ctx.beginPath();
-            ctx.moveTo(mx - (mW >> 1), my - (flameH >> 1));
+            ctx.arc(mx - (spriteW >> 1), my, Math.max(2, spriteH * 0.35), 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else {
+          // Representación aerodinámica esbelta del misil Exocet rasante
+          const mW = Math.max(6, Math.min(24, Math.round(16 * proj.scale)));
+          const mH = Math.max(2, Math.min(5, Math.round(3.0 * proj.scale)));
+
+          if (m.engineLit) {
+            const flameLen = Math.max(4, Math.round(mW * 0.75));
+            ctx.fillStyle = "rgba(255, 175, 45, 0.85)";
+            ctx.beginPath();
+            ctx.moveTo(mx - (mW >> 1), my - (mH >> 1));
             ctx.lineTo(mx - (mW >> 1) - flameLen, my);
-            ctx.lineTo(mx - (mW >> 1), my + (flameH >> 1));
+            ctx.lineTo(mx - (mW >> 1), my + (mH >> 1));
             ctx.closePath();
             ctx.fill();
-
-            ctx.fillStyle = "#fff7c2";
-            ctx.fillRect(
-              mx - (mW >> 1) - Math.round(flameLen * 0.5),
-              my - Math.max(1, flameH >> 2),
-              Math.round(flameLen * 0.5),
-              Math.max(1, flameH >> 1)
-            );
           }
 
-          ctx.fillStyle = "#334155";
-          ctx.fillRect(mx - (mW >> 1), my, mW, Math.max(1, mH >> 1));
+          // Fuselaje esbelto en gris naval y ojiva blanca
+          ctx.fillStyle = "#64748b";
+          ctx.fillRect(mx - (mW >> 1), my - (mH >> 1), mW, mH);
           ctx.fillStyle = "#e2e8f0";
-          ctx.fillRect(mx - (mW >> 1), my - (mH >> 1), mW, Math.max(1, mH >> 1));
-          ctx.fillStyle = "#94a3b8";
-          ctx.fillRect(mx - (mW >> 1) + Math.round(mW * 0.3), my - (mH >> 1), Math.max(1, Math.round(mW * 0.15)), mH);
-
-          const noseW = Math.max(2, Math.round(mW * 0.22));
-          ctx.fillStyle = "#f8fafc";
-          ctx.beginPath();
-          ctx.moveTo(mx + (mW >> 1), my - (mH >> 1));
-          ctx.lineTo(mx + (mW >> 1) + noseW, my);
-          ctx.lineTo(mx + (mW >> 1), my + (mH >> 1));
-          ctx.closePath();
-          ctx.fill();
-
-          const finH = Math.max(3, Math.round(mH * 1.8));
-          const finW = Math.max(1, Math.round(mW * 0.18));
-          ctx.fillStyle = "#1e293b";
-          ctx.fillRect(mx - Math.round(mW * 0.05), my - (finH >> 1), finW, finH);
-          ctx.fillRect(mx - (mW >> 1), my - Math.round(finH * 0.4), Math.max(1, finW), Math.round(finH * 0.8));
+          ctx.fillRect(mx + (mW >> 1) - 3, my - (mH >> 1), 3, mH);
         }
       }
       ctx.restore();
@@ -3245,7 +3247,7 @@ window.MALVINAS_ASSETS_MANIFEST = {
       this.enemyAssets = assets.enemies || null;
 
       // HMS Sheffield (D80) ubicado inicialmente en el horizonte lejano
-      // Escala ampliada a 340 unidades para que luzca con presencia imponente de destructor Tipo 42
+      // Escala de 420 unidades para que el destructor Tipo 42 luzca con presencia imponente y nítida
       this.ships = [
         {
           id: "D-80",
@@ -3256,7 +3258,7 @@ window.MALVINAS_ASSETS_MANIFEST = {
           z: 2200, // En el horizonte, dentro del frustum
           vx: 8,
           vz: -20,
-          worldWidth: 340,
+          worldWidth: 420,
           wakeAnim: 0,
           hp: 100,
           damageState: 0,
@@ -3303,12 +3305,12 @@ window.MALVINAS_ASSETS_MANIFEST = {
           const fIdx = Math.min(seq.length - 1, ship.explosionFrame | 0);
           sprite = seq[fIdx];
         } else if (ea && ea.ships) {
-          // Visualización de alta definición del HMS Sheffield en todo el rango
-          // (se descarta barcolejos por ser un sprite de baja resolución)
-          if (ship.z > 1200) {
-            sprite = ea.ships.barco1 || ea.ships.barco || ea.ships.barco4;
-          } else if (ship.z > 700) {
-            sprite = (ship.wakeAnim | 0) % 2 === 0 ? ea.ships.barco1 : (ea.ships.barco4 || ea.ships.barco2);
+          // Visualización de alta definición del HMS Sheffield con el sprite de mayor resolución (barco4: 684x224)
+          // revelando el puente de mando, mástil de radar Type 965 y silueta militar sin pixelación
+          if (ship.z > 1000) {
+            sprite = ea.ships.barco4 || ea.ships.barco1 || ea.ships.barco;
+          } else if (ship.z > 500) {
+            sprite = (ship.wakeAnim | 0) % 2 === 0 ? (ea.ships.barco4 || ea.ships.barco1) : (ea.ships.barco6 || ea.ships.barco5);
           } else {
             const wakeCycle = ea.shipWakeCycle && ea.shipWakeCycle.length > 0 ? ea.shipWakeCycle : [ea.ships.barco4];
             const wIdx = (ship.wakeAnim | 0) % wakeCycle.length;
@@ -3318,9 +3320,9 @@ window.MALVINAS_ASSETS_MANIFEST = {
 
         if (!sprite) continue;
 
-        const drawW = Math.max(28, Math.round(ship.worldWidth * proj.scale));
+        const drawW = Math.max(36, Math.round(ship.worldWidth * proj.scale));
         const aspect = sprite.height / sprite.width;
-        const drawH = Math.max(9, Math.round(drawW * aspect));
+        const drawH = Math.max(12, Math.round(drawW * aspect));
 
         const drawX = Math.round(proj.screenX - drawW * 0.5);
         // Base de la línea de flotación asentada en el agua
@@ -3684,13 +3686,13 @@ window.MALVINAS_ASSETS_MANIFEST = {
             ctx.lineWidth = 1;
 
             // Retícula militar de fijado con corchetes en las esquinas [  ] adaptada al destructor
-            const targetW = Math.max(30, Math.round(ship.worldWidth * proj.scale * 1.06));
-            const targetH = Math.max(12, Math.round(targetW * 0.32));
+            const targetW = Math.max(42, Math.round(ship.worldWidth * proj.scale * 1.15));
+            const targetH = Math.max(16, Math.round(targetW * 0.36));
             const bX = Math.round(sx - targetW * 0.5);
-            const bY = Math.round(sy - targetH * 0.84 - 3);
-            const cLen = Math.min(6, Math.max(3, (targetW * 0.16) | 0));
+            const bY = Math.round(sy - targetH * 0.88 - 4);
+            const cLen = Math.min(7, Math.max(4, (targetW * 0.14) | 0));
 
-            // Esquinas tácticas de fijado
+            // Esquinas tácticas de fijado sin tapar la silueta central del destructor
             ctx.beginPath();
             // Superior izquierda
             ctx.moveTo(bX, bY + cLen);
@@ -3710,16 +3712,25 @@ window.MALVINAS_ASSETS_MANIFEST = {
             ctx.lineTo(bX + targetW, bY + targetH - cLen);
             ctx.stroke();
 
+            // Etiqueta táctica con fondo oscuro traslúcido para legibilidad perfecta sobre el cielo
             const statusText = isHit
               ? "HMS SHEFFIELD: INCENDIO"
               : "HMS SHEFFIELD " + Math.round(ship.z) + "M";
             ctx.font = "bold 8px Consolas, monospace";
+            const textW = ctx.measureText(statusText).width;
+            ctx.fillStyle = "rgba(4, 14, 28, 0.72)";
+            ctx.fillRect(Math.round(sx - textW * 0.5 - 4), bY - 14, Math.round(textW + 8), 11);
+            ctx.fillStyle = boxColor;
             ctx.textAlign = "center";
-            ctx.fillText(statusText, sx, bY - 4);
+            ctx.fillText(statusText, sx, bY - 5);
 
             if (isReadyToFire) {
+              const lockTxt = targetFlash ? "▶ DISPARO AUTORIZADO ◀" : "LOCK EXOCET AM-39";
+              const lockW = ctx.measureText(lockTxt).width;
+              ctx.fillStyle = "rgba(4, 14, 28, 0.72)";
+              ctx.fillRect(Math.round(sx - lockW * 0.5 - 4), bY + targetH + 3, Math.round(lockW + 8), 11);
               ctx.fillStyle = targetFlash ? "#ffffff" : green;
-              ctx.fillText(targetFlash ? "▶ DISPARO AUTORIZADO ◀" : "LOCK EXOCET AM-39", sx, bY + targetH + 8);
+              ctx.fillText(lockTxt, sx, bY + targetH + 11);
             }
           }
         }
@@ -4026,13 +4037,7 @@ window.MALVINAS_ASSETS_MANIFEST = {
     }
 
     global.addEventListener("keydown", (e) => {
-      if (e.code === "Digit1") toggleFeature("bg");
-      else if (e.code === "Digit2") toggleFeature("ocean");
-      else if (e.code === "Digit3") toggleFeature("waves");
-      else if (e.code === "Digit4") toggleFeature("enemies");
-      else if (e.code === "Digit5") toggleFeature("player");
-      else if (e.code === "Digit6") toggleFeature("hud");
-      else if (e.code === "KeyC") toggleFeature("crt");
+      if (e.code === "KeyC") toggleFeature("crt");
       else if (e.code === "KeyM") sound.toggleMute();
     });
 
@@ -4127,6 +4132,8 @@ window.MALVINAS_ASSETS_MANIFEST = {
 
           // 8. Renderizar capas de mundo (Z-Index 10, 20, 30) en buffer con overscan
           worldCtx.imageSmoothingEnabled = false;
+          worldCtx.fillStyle = "#0c284e";
+          worldCtx.fillRect(0, 0, Config.WORLD_W, Config.WORLD_H);
           Layers.LAYER_BACKGROUND.render(worldCtx, camera);
           Layers.LAYER_OCEAN.render(worldCtx, camera);
           Layers.LAYER_ENEMIES.render(worldCtx, camera);
