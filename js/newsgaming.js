@@ -493,3 +493,4 @@
   Malvinas.NewsgamingController = NewsgamingController;
   Malvinas.newsgaming = new NewsgamingController();
 })(window);
+

@@ -2,16 +2,16 @@
  * ============================================================================
  * MALVINAS 1982 — CAPAS DESACOPLADAS & RENDERIZADOR SUPER SCALER 16-BIT
  * ============================================================================
- * Arquitectura Newsgaming 4 de Mayo de 1982 (Ataque al HMS Sheffield):
+ * Capas desacopladas por Z-Index (Requerimientos Técnicos #2 y #4):
  *
- *   [10] LAYER_BACKGROUND : Cielo crepuscular + islas Malvinas con parallax y nubes.
+ *   [10] LAYER_BACKGROUND : Cielo crepuscular con islas Malvinas y nubes parallax.
  *   [20] LAYER_OCEAN      : Motor pseudo-3D de scanlines UV 1024x256 con doble
  *                           octava de detalle + olas 3D con escorzo rasante real.
  *   [30] LAYER_ENEMIES    : Destructor Tipo 42 HMS Sheffield (D80) con LOD según Z,
  *                           estela de proa animada, misiles Exocet AM-39 y secuencia
  *                           gradual de impacto, incendio incontrolable y agonía.
- *   [40] LAYER_PLAYER     : Formación de combate: Líder (Bedacarratz) y Numeral
- *                           (Mayora) con alabeo, cabeceo, pilón de Exocet y estelas.
+ *   [40] LAYER_PLAYER     : Formación de combate: Numeral (Mayora - jugador) en
+ *                           primer plano y Líder (Bedacarratz) volando adelante.
  *   [50] LAYER_HUD        : Aviónica histórica: Altitud rasante, medidor de detección
  *                           radar Type 965, comunicaciones de radio y colimador.
  * ============================================================================
@@ -79,7 +79,7 @@
   }
 
   // ==========================================================================
-  // [10] LAYER_BACKGROUND — CIELO CREPUSCULAR + ISLAS + PARALLAX Y NUBES
+  // [10] LAYER_BACKGROUND — CIELO CREPUSCULAR + ISLAS MALVINAS + NUBES PARALLAX
   // ==========================================================================
   const LAYER_BACKGROUND = {
     name: "LAYER_BACKGROUND",
@@ -89,7 +89,7 @@
     skyCanvas: null,
     skySeamlessCanvas: null,
     skyTilePeriod: 0,
-    skyDrawHeight: HORIZON_WORLD_Y + 12,
+    skyDrawHeight: HORIZON_WORLD_Y + 14,
 
     cloudSprites: [],
     cloudEntities: [],
@@ -107,6 +107,7 @@
         const ctx = c.getContext("2d");
         ctx.imageSmoothingEnabled = false;
 
+        // Mitad A: original | Mitad B: espejada (elimina costuras verticales al rotar)
         ctx.drawImage(src, 0, 0, tileW + 1, this.skyDrawHeight);
         ctx.save();
         ctx.translate(this.skyTilePeriod, 0);
@@ -118,12 +119,14 @@
       }
 
       this.cloudEntities = [];
-      const cloudSprites = assets.clouds ? assets.clouds.elements || [] : [];
+      const cloudSprites = Array.isArray(assets.clouds)
+        ? assets.clouds
+        : (assets.clouds && assets.clouds.elements) || [];
       this.cloudSprites = cloudSprites;
 
       if (cloudSprites.length > 0) {
-        const cloudCount = 14;
-        for (let i = 0; i < cloudCount; i++) {
+        const count = 14;
+        for (let i = 0; i < count; i++) {
           const plane = (i % 3) + 1;
           const parallaxRatio = plane === 1 ? 0.08 : plane === 2 ? 0.16 : 0.28;
           const spr = cloudSprites[i % cloudSprites.length];
@@ -196,22 +199,39 @@
 
     oceanData: null,
     waveAssets: null,
+
+    scanlineCanvas: null,
+    scanlineCtx: null,
+    scanlineImgData: null,
+    scanlineBuf32: null,
+
     waveEntities: [],
-    waveDensity: 28,
 
     init(assets) {
-      this.oceanData = assets.oceanSurfaceData || null;
-      this.waveAssets = assets.waveSequences || null;
+      this.oceanData = assets.ocean || assets.oceanSurfaceData || null;
+      this.waveAssets = assets.waves || assets.waveSequences || null;
+
+      this.scanlineCanvas = document.createElement("canvas");
+      this.scanlineCanvas.width = WORLD_W;
+      this.scanlineCanvas.height = OCEAN_SCANLINES;
+      this.scanlineCtx = this.scanlineCanvas.getContext("2d");
+      this.scanlineCtx.imageSmoothingEnabled = false;
+      this.scanlineImgData = this.scanlineCtx.createImageData(
+        WORLD_W,
+        OCEAN_SCANLINES
+      );
+      this.scanlineBuf32 = new Uint32Array(this.scanlineImgData.data.buffer);
+
       this._buildWaveField();
     },
 
     _buildWaveField() {
       this.waveEntities = [];
       const bands = [
-        { name: "far", count: 7, zMin: 950, zMax: 2200, wMin: 12, wMax: 21 },
-        { name: "upperMid", count: 8, zMin: 550, zMax: 950, wMin: 16, wMax: 26 },
-        { name: "mid", count: 8, zMin: 220, zMax: 550, wMin: 19, wMax: 30 },
-        { name: "near", count: 7, zMin: 45, zMax: 220, wMin: 24, wMax: 38 },
+        { name: "far", count: 8, zMin: 950, zMax: 2200, wMin: 12, wMax: 21 },
+        { name: "upperMid", count: 9, zMin: 520, zMax: 950, wMin: 16, wMax: 26 },
+        { name: "mid", count: 9, zMin: 200, zMax: 520, wMin: 19, wMax: 30 },
+        { name: "near", count: 8, zMin: 45, zMax: 200, wMin: 24, wMax: 38 },
       ];
 
       for (let b = 0; b < bands.length; b++) {
@@ -223,20 +243,18 @@
           const isBreaker = Math.random() < 0.45;
           const type = isBreaker
             ? Math.random() < 0.5 ? "breakerLeft" : "breakerRight"
-            : Math.random() < 0.5 ? "swellA" : "swellB";
+            : Math.random() < 0.5 ? "swellLoop" : "gentleSwell";
 
           this.waveEntities.push({
             type,
             x,
             y: 0,
             z: zRel,
-            baseX: x,
             zMin: band.zMin,
             zMax: band.zMax,
             worldWidth: band.wMin + Math.random() * (band.wMax - band.wMin),
             animSpeed: 5.5 + Math.random() * 3.5,
             frameIndex: Math.random() * 6,
-            phaseOffset: Math.random() * Math.PI * 2,
           });
         }
       }
@@ -260,76 +278,124 @@
       }
     },
 
-    render(ctx, camera) {
-      if (!this.enabled) return;
-
-      // 1. Renderizado de Scanlines UV con perspectiva hiperbólica
-      if (this.oceanData && this.oceanData.canvas) {
-        const tex = this.oceanData.canvas;
-        const tw = tex.width;
-        const th = tex.height;
-        const camY = camera.y;
-        const camX = camera.x;
-        const camZ = camera.z;
-
-        for (let y = 0; y < OCEAN_SCANLINES; y++) {
-          const scanY = HORIZON_WORLD_Y + y;
-          const dy = y + 1.0;
-          const z = (FOCAL_LENGTH * camY) / dy;
-          if (z <= Z_CLIP_NEAR || z > Z_HORIZON_FAR) continue;
-
-          const v = Math.min(th - 1, Math.max(0, ((th * (1.0 - dy / OCEAN_SCANLINES)) | 0)));
-          const uOffset = ((camX * 0.28 + (camZ * 0.18)) % tw + tw) % tw;
-
-          ctx.drawImage(
-            tex,
-            0,
-            v,
-            tw,
-            1,
-            0,
-            scanY,
-            WORLD_W,
-            1
-          );
-        }
-      } else {
-        const grad = ctx.createLinearGradient(0, HORIZON_WORLD_Y, 0, WORLD_H);
+    _renderScanlineSurface(worldCtx, camera) {
+      const oData = this.oceanData;
+      if (!oData || !oData.tex32 || !this.scanlineBuf32) {
+        // Fallback elegante que dibuja el océano desde HORIZON_WORLD_Y hasta el fondo
+        const grad = worldCtx.createLinearGradient(0, HORIZON_WORLD_Y, 0, WORLD_H);
         grad.addColorStop(0, "#083e74");
         grad.addColorStop(0.35, "#0b589f");
         grad.addColorStop(1, "#1988d8");
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, WORLD_W, WORLD_H - HORIZON_WORLD_Y);
+        worldCtx.fillStyle = grad;
+        worldCtx.fillRect(0, HORIZON_WORLD_Y, WORLD_W, OCEAN_SCANLINES);
+        return;
       }
 
-      // 2. Renderizado de olas rasantes
-      if (this.wavesEnabled && this.waveAssets) {
-        ctx.save();
-        for (let i = 0; i < this.waveEntities.length; i++) {
-          const w = this.waveEntities[i];
-          const proj = projectWorldPoint(w.x, w.y, w.z, camera);
-          if (!proj) continue;
+      const out32 = this.scanlineBuf32;
+      const tex32 = oData.tex32;
+      const maskU = oData.texMaskU || 1023;
+      const maskV = oData.texMaskV || 255;
+      const shiftV = oData.texShiftV || 10;
+      const horizonLUT = oData.horizonLUT;
+      const lutMax = (oData.horizonLUTSize || 64) - 1;
 
-          const seq = this.waveAssets[w.type] || this.waveAssets.swellA;
-          if (!seq || seq.length === 0) continue;
+      const projK = FOCAL_LENGTH * camera.y;
+      const dyBias = (projK / Z_HORIZON_FAR) | 0;
 
-          const fIdx = (w.frameIndex | 0) % seq.length;
-          const sprite = seq[fIdx];
-          if (!sprite) continue;
+      const U_SCALE = 0.52;
+      const V_SCALE = 0.44;
 
-          const drawW = Math.max(4, Math.round(w.worldWidth * proj.scale));
-          const grazing = 0.05 + 0.12 * (w.z / Z_HORIZON_FAR);
-          const drawH = Math.max(1, Math.min(6, Math.round(drawW * grazing)));
+      const camX = camera.x;
+      const camZ = camera.z;
 
-          const drawX = Math.round(proj.screenX - drawW * 0.5);
-          const drawY = Math.round(proj.screenY - drawH * 0.85);
+      let outIdx = 0;
 
-          if (drawY >= HORIZON_WORLD_Y && drawX + drawW > 0 && drawX < WORLD_W) {
-            ctx.drawImage(sprite, drawX, drawY, drawW, drawH);
+      for (let dy = 0; dy < OCEAN_SCANLINES; dy++) {
+        const z = projK / (dy + dyBias);
+        const invScale = z / FOCAL_LENGTH;
+
+        const vCoord = ((camZ + z) * V_SCALE) | 0;
+        const vRowOffset = (vCoord & maskV) << shiftV;
+
+        const worldLeftX = camX - WORLD_CX * invScale;
+        let uFixed = (worldLeftX * U_SCALE * 65536.0) | 0;
+        const stepUFixed = (invScale * U_SCALE * 65536.0) | 0;
+
+        if (dy < 42 && horizonLUT) {
+          const lutIdx = Math.min(lutMax, ((dy / 41) * lutMax) | 0);
+          const hr = horizonLUT[lutIdx * 3];
+          const hg = horizonLUT[lutIdx * 3 + 1];
+          const hb = horizonLUT[lutIdx * 3 + 2];
+          const fogWeight = (((42 - dy) * 220) / 42) | 0;
+          const texWeight = 256 - fogWeight;
+
+          for (let px = 0; px < WORLD_W; px++) {
+            const tu = (uFixed >> 16) & maskU;
+            uFixed = (uFixed + stepUFixed) | 0;
+
+            const c = tex32[vRowOffset + tu];
+            const tr = c & 0xff;
+            const tg = (c >> 8) & 0xff;
+            const tb = (c >> 16) & 0xff;
+
+            const r = (tr * texWeight + hr * fogWeight) >> 8;
+            const g = (tg * texWeight + hg * fogWeight) >> 8;
+            const b = (tb * texWeight + hb * fogWeight) >> 8;
+
+            out32[outIdx++] = 0xff000000 | (b << 16) | (g << 8) | r;
+          }
+        } else {
+          for (let px = 0; px < WORLD_W; px++) {
+            const tu = (uFixed >> 16) & maskU;
+            uFixed = (uFixed + stepUFixed) | 0;
+            out32[outIdx++] = tex32[vRowOffset + tu];
           }
         }
-        ctx.restore();
       }
+
+      this.scanlineCtx.putImageData(this.scanlineImgData, 0, 0);
+      worldCtx.drawImage(this.scanlineCanvas, 0, HORIZON_WORLD_Y);
+
+      // Resplandor sutil en la línea de horizonte
+      worldCtx.fillStyle = "rgba(180, 230, 255, 0.45)";
+      worldCtx.fillRect(0, HORIZON_WORLD_Y, WORLD_W, 1);
+    },
+
+    _renderDynamicWaves(worldCtx, camera) {
+      if (!this.wavesEnabled || !this.waveAssets) return;
+
+      for (let i = 0; i < this.waveEntities.length; i++) {
+        const w = this.waveEntities[i];
+        const proj = projectWorldPoint(w.x, w.y, w.z, camera);
+        if (!proj) continue;
+
+        const seq =
+          this.waveAssets[w.type] ||
+          this.waveAssets.swellLoop ||
+          this.waveAssets.breakerRight;
+        if (!seq || seq.length === 0) continue;
+
+        const fIdx = (w.frameIndex | 0) % seq.length;
+        const sprite = seq[fIdx];
+        if (!sprite) continue;
+
+        const drawW = Math.max(4, Math.round(w.worldWidth * proj.scale));
+        const grazing = 0.05 + 0.12 * (w.z / Z_HORIZON_FAR);
+        const drawH = Math.max(1, Math.min(6, Math.round(drawW * grazing)));
+
+        const drawX = Math.round(proj.screenX - drawW * 0.5);
+        const drawY = Math.round(proj.screenY - drawH * 0.85);
+
+        if (drawY >= HORIZON_WORLD_Y && drawX + drawW > 0 && drawX < WORLD_W) {
+          worldCtx.drawImage(sprite, drawX, drawY, drawW, drawH);
+        }
+      }
+    },
+
+    render(worldCtx, camera) {
+      if (!this.enabled) return;
+      this._renderScanlineSurface(worldCtx, camera);
+      this._renderDynamicWaves(worldCtx, camera);
     },
   };
 
@@ -347,15 +413,15 @@
     init(assets) {
       this.enemyAssets = assets.enemies || null;
 
-      // Objetivo histórico central: Destructor HMS Sheffield (D80)
+      // HMS Sheffield (D80) ubicado inicialmente en el horizonte lejano
       this.ships = [
         {
           id: "D-80",
           designation: "HMS SHEFFIELD (D80)",
           type: "D80",
-          x: -80,
+          x: -60,
           y: 0,
-          z: 3100, // Comienza en el horizonte lejano
+          z: 2200, // En el horizonte, dentro del frustum
           vx: 8,
           vz: -20,
           worldWidth: 145,
@@ -370,7 +436,9 @@
     triggerAttack() {
       if (Malvinas.newsgaming) {
         return Malvinas.newsgaming.triggerPlayerLaunch(
-          Malvinas.FlightControls ? Malvinas.Runtime.controls.state : { altitudeMeters: 9.5 },
+          Malvinas.Runtime && Malvinas.Runtime.controls
+            ? Malvinas.Runtime.controls.state
+            : { altitudeMeters: 9.5 },
           this
         );
       }
@@ -379,7 +447,6 @@
 
     update(dt, camera, flight, timeSec) {
       if (!this.enabled) return;
-
       for (let i = 0; i < this.ships.length; i++) {
         const ship = this.ships[i];
         ship.wakeAnim = (ship.wakeAnim + 7 * dt) % 5;
@@ -422,7 +489,6 @@
         const drawH = Math.max(6, Math.round(drawW * aspect));
 
         const drawX = Math.round(proj.screenX - drawW * 0.5);
-        // Anclar la línea de flotación al 94% del sprite en la superficie del agua
         const drawY = Math.round(proj.screenY - drawH * 0.94);
 
         if (drawY + drawH > HORIZON_WORLD_Y && drawX + drawW > 0 && drawX < WORLD_W) {
@@ -463,7 +529,6 @@
       const st = this.state;
 
       const targetX = VIEW_W * 0.5 + flight.rollDeg * 3.4;
-      // Inclinación por cabeceo / altitud
       const targetY =
         VIEW_H * 0.775 -
         flight.pitchDeg * 1.8 -
@@ -473,7 +538,6 @@
       st.screenX += (targetX - st.screenX) * Math.min(1, 9 * dt);
       st.screenY += (targetY - st.screenY) * Math.min(1, 7 * dt);
 
-      // Vibración de cabina a ras del agua o en postcombustión
       if (flight.altitudeMeters < 4.0 || flight.throttle > 0.35) {
         const amp = flight.altitudeMeters < 4.0 ? (4.0 - flight.altitudeMeters) * 0.8 : 0.8;
         st.shudderX = (Math.random() * 2 - 1) * amp;
@@ -519,42 +583,46 @@
       const news = Malvinas.newsgaming;
 
       // ----------------------------------------------------------------------
-      // 1. RENDERIZAR AL LÍDER (CC BEDACARRATZ) VOLANDO EN FORMACIÓN ADELANTE
+      // 1. RENDERIZAR AL LÍDER (CC BEDACARRATZ) VOLANDO ADELANTE EN FORMACIÓN
       // ----------------------------------------------------------------------
       if (news && news.stage !== Malvinas.STAGES.BRIEFING) {
         const leaderEgressX = news.egressActive ? news.egressOffset * -2.4 : 0;
         const leaderEgressZ = news.egressActive ? news.egressOffset * 1.8 : 0;
-        const leaderProj = projectWorldPoint(-55 + leaderEgressX, 11.2, 92 + leaderEgressZ, camera);
+        // Posicionado a Z=280 en el espacio 3D para escala proporcionada de compañero de vuelo
+        const leaderProj = projectWorldPoint(-65 + leaderEgressX, 13.0, 260 + leaderEgressZ, camera);
 
         if (leaderProj && sp.AVION1) {
-          const lScale = leaderProj.scale * 0.55;
           const lImg = sp.AVION1;
+          const lScale = leaderProj.scale * 0.42;
           const lW = Math.round(lImg.width * lScale);
           const lH = Math.round(lImg.height * lScale);
 
-          screenCtx.save();
-          screenCtx.translate(leaderProj.screenX - WORLD_CX + VIEW_W * 0.5, leaderProj.screenY - HORIZON_WORLD_Y + HORIZON_SCREEN_Y);
-          screenCtx.rotate(flight.rollRad * 0.8);
+          // Coordenadas en pantalla proyectadas
+          const lx = leaderProj.screenX - WORLD_CX + VIEW_W * 0.5;
+          const ly = leaderProj.screenY - HORIZON_WORLD_Y + HORIZON_SCREEN_Y;
 
-          // Sombra del líder sobre el mar
-          screenCtx.fillStyle = "rgba(4, 20, 48, 0.28)";
+          screenCtx.save();
+          screenCtx.translate(lx, ly);
+          screenCtx.rotate(flight.rollRad * 0.85);
+
+          // Sombra sutil del líder sobre el agua
+          screenCtx.fillStyle = "rgba(4, 20, 48, 0.25)";
           screenCtx.beginPath();
-          screenCtx.ellipse(0, 24, lW * 0.45, 4, 0, 0, Math.PI * 2);
+          screenCtx.ellipse(0, lH * 0.65, lW * 0.4, 3, 0, 0, Math.PI * 2);
           screenCtx.fill();
 
-          // Destello de motor
+          // Destello de tobera
           screenCtx.fillStyle = "rgba(255, 175, 45, 0.4)";
           screenCtx.beginPath();
-          screenCtx.arc(0, lH * 0.2, 5, 0, Math.PI * 2);
+          screenCtx.arc(0, lH * 0.2, 3, 0, Math.PI * 2);
           screenCtx.fill();
 
           screenCtx.drawImage(lImg, (-lW * 0.5) | 0, (-lH * 0.5) | 0, lW, lH);
 
-          // Rótulo táctico retro del líder
           screenCtx.font = "bold 7px Consolas, monospace";
           screenCtx.fillStyle = "#57d7ff";
           screenCtx.textAlign = "center";
-          screenCtx.fillText("LÍDER [BEDACARRATZ]", 0, -lH * 0.5 - 6);
+          screenCtx.fillText("LÍDER [BEDACARRATZ]", 0, -lH * 0.5 - 5);
 
           screenCtx.restore();
         }
@@ -619,7 +687,6 @@
       screenCtx.translate(cx, cy);
       screenCtx.rotate(sel.angleRad);
 
-      // Fuego de la tobera en postcombustión
       if (flight.throttle > 0.45) {
         const pulse = 8 + Math.sin(timeSec * 48) * 3;
         screenCtx.fillStyle = "rgba(255, 168, 52, 0.35)";
@@ -628,10 +695,9 @@
         screenCtx.fill();
       }
 
-      // Renderizar el misil Exocet AM-39 bajo el pilón alar derecho (si aún no fue lanzado)
+      // Exocet AM-39 bajo el pilón alar derecho
       if (news && !news.playerLaunched) {
         screenCtx.fillStyle = "#cbd5e1";
-        // Pilón derecho
         screenCtx.fillRect(18, 6, 16, 4);
         screenCtx.fillStyle = "#ffffff";
         screenCtx.fillRect(20, 7, 12, 2);
@@ -681,9 +747,7 @@
       const amber = "#ffbe42";
       const red = "#ff4d4d";
 
-      // ----------------------------------------------------------------------
-      // 1. PANEL SUPERIOR IZQUIERDO: VELOCIDAD, ALTITUD RASANTE Y DETECCIÓN
-      // ----------------------------------------------------------------------
+      // 1. Panel de vuelo
       ctx.fillStyle = "rgba(5, 14, 26, 0.75)";
       ctx.fillRect(10, 10, 168, 66);
       ctx.strokeStyle = "rgba(77, 255, 145, 0.45)";
@@ -692,7 +756,6 @@
       ctx.fillStyle = green;
       ctx.fillText("SPD  " + String(flight.knots).padStart(3, "0") + " KTS", 16, 14);
 
-      // Altímetro con indicación de zona de sigilo / peligro
       const alt = flight.altitudeMeters;
       const altStr = alt.toFixed(1).padStart(4, "0") + " M";
 
@@ -707,7 +770,6 @@
         ctx.fillText("ALT  " + altStr + " [RASANTE OK]", 16, 26);
       }
 
-      // Barra de Detección Radar Type 965
       ctx.fillStyle = "#12293f";
       ctx.fillRect(16, 40, 100, 6);
       const detW = Math.round((flight.detectionLevel / 100) * 100);
@@ -717,7 +779,6 @@
       ctx.fillStyle = flight.detectionLevel > 50 ? red : cyan;
       ctx.fillText("RWR " + Math.round(flight.detectionLevel) + "%", 122, 38);
 
-      // Barra de Potencia
       ctx.fillStyle = "#12293f";
       ctx.fillRect(16, 52, 100, 5);
       const normThr = Math.max(0.08, (flight.throttle + 0.55) / 1.55);
@@ -726,9 +787,7 @@
       ctx.fillStyle = flight.throttle > 0.35 ? amber : cyan;
       ctx.fillText(flight.throttle > 0.35 ? "AB" : "MIL", 122, 50);
 
-      // ----------------------------------------------------------------------
-      // 2. INDICADOR DE ALABEO (ROLL)
-      // ----------------------------------------------------------------------
+      // 2. Indicador de Alabeo
       const rollTxt = (flight.rollDeg >= 0 ? "+" : "") + flight.rollDeg.toFixed(1) + "°";
       ctx.fillStyle = "rgba(5, 14, 26, 0.65)";
       ctx.fillRect(VIEW_W * 0.5 - 56, 10, 112, 18);
@@ -736,9 +795,7 @@
       ctx.textAlign = "center";
       ctx.fillText("BANK " + rollTxt, VIEW_W * 0.5, 14);
 
-      // ----------------------------------------------------------------------
-      // 3. RETÍCULA Y COLIMADOR DE TIRO
-      // ----------------------------------------------------------------------
+      // 3. Colimador de tiro
       const pipX = Math.round(VIEW_W * 0.5 - flight.rollDeg * 1.6);
       const pipY = Math.round(HORIZON_SCREEN_Y + 26 - flight.pitchDeg * 2.2);
 
@@ -797,9 +854,7 @@
         }
       }
 
-      // ----------------------------------------------------------------------
-      // 4. RADAR TÁCTICO NAVAL (ESQUINA SUPERIOR DERECHA)
-      // ----------------------------------------------------------------------
+      // 4. Radar Táctico
       const radR = 30;
       const radCX = VIEW_W - 14 - radR;
       const radCY = 12 + radR;
@@ -826,7 +881,6 @@
       );
       ctx.stroke();
 
-      // Posición propia y contacto del Sheffield
       ctx.fillStyle = cyan;
       ctx.fillRect(radCX - 1, radCY + radR * 0.68, 3, 3);
 
@@ -840,9 +894,7 @@
         ctx.fillRect(bx - 1, by - 1, 3, 3);
       }
 
-      // ----------------------------------------------------------------------
-      // 5. BANNER DE COMUNICACIÓN DE RADIO HISTÓRICA (ARRIBA AL CENTRO)
-      // ----------------------------------------------------------------------
+      // 5. Banner de Radio Histórica
       if (news.radioBanner && news.radioBanner.timer > 0) {
         ctx.save();
         ctx.fillStyle = "rgba(5, 16, 32, 0.88)";
@@ -867,9 +919,7 @@
         ctx.restore();
       }
 
-      // ----------------------------------------------------------------------
-      // 6. PROMPT GIGANTE DE LANZAMIENTO COORDINADO
-      // ----------------------------------------------------------------------
+      // 6. Prompt de Lanzamiento Coordinado
       if (news.stage === Malvinas.STAGES.COORDINATED_ATTACK && !news.playerLaunched) {
         ctx.save();
         const flash = Math.sin(Date.now() * 0.012) > 0;
@@ -896,9 +946,7 @@
         ctx.restore();
       }
 
-      // ----------------------------------------------------------------------
-      // 7. ALERTA DE DETECCIÓN O COLISIÓN
-      // ----------------------------------------------------------------------
+      // 7. Alertas de vuelo
       if (flight.altitudeMeters > 15.0) {
         const blink = (Date.now() % 360) < 180;
         if (blink) {
@@ -917,7 +965,6 @@
         }
       }
 
-      // Puntero táctil virtual
       if (pointerState && pointerState.active) {
         ctx.strokeStyle = "rgba(87, 215, 255, 0.6)";
         ctx.beginPath();

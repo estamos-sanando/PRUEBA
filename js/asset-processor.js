@@ -568,7 +568,14 @@
       }
     }
 
+    const oceanCanvas = createCanvas(TEX_W, TEX_H);
+    const oCtx = oceanCanvas.getContext("2d");
+    const oImg = oCtx.createImageData(TEX_W, TEX_H);
+    oImg.data.set(texBytes);
+    oCtx.putImageData(oImg, 0, 0);
+
     return {
+      canvas: oceanCanvas,
       trapezoidCanvas: cleanTrap,
       texWidth: TEX_W,
       texHeight: TEX_H,
@@ -886,9 +893,23 @@
       shipsFlipped.barco10,
     ].filter(Boolean);
 
+    const wavesObj = {
+      swellLoop: swellFrames,
+      gentleSwell: gentleSwellFrames,
+      breakerRight: breakerLoopRight,
+      breakerLeft: breakerLoopLeft,
+      splashRight: splashFramesRight,
+      splashLeft: splashFramesLeft,
+      crestToSplashRight: fullCrestToSplashRight,
+      crestToSplashLeft: fullCrestToSplashLeft,
+    };
+
     return {
       skyCanvas,
       ocean: oceanSurface,
+      oceanSurfaceData: oceanSurface,
+      waves: wavesObj,
+      waveSequences: wavesObj,
       waves: {
         swellLoop: swellFrames,
         gentleSwell: gentleSwellFrames,

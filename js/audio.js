@@ -1,15 +1,15 @@
 /**
  * ============================================================================
- * MALVINAS 1982 — MOTOR DE AUDIO & MÚSICA CHIPTUNE 16-BIT (WEB AUDIO API)
+ * MALVINAS 1982 — MOTOR DE AUDIO PROCEDURAL (WEB AUDIO API)
  * ============================================================================
- * Sintetizador procedural 100% nativo (cero dependencias externas de audio):
- *  - Turbina SNECMA Atar 8K50 (ruido rosa resonante modulado por acelerador).
+ * Efectos de sonido realistas en tiempo real (cero dependencias externas):
+ *  - Turbina SNECMA Atar 8K50 (ruido rosa resonante modulado por acelerador y altitud).
  *  - Oleaje y viento del Atlántico Sur (filtro pasabajos dinámico).
  *  - RWR Radar Warning (bips de alerta cuando se vuela alto sobre el lóbulo radar).
  *  - Estática de radio militar para comunicaciones de Bedacarratz y Mayora.
- *  - Ignición y rugido de propulsión de cohete Exocet AM-39 (sub-graves pesados).
+ *  - Desprendimiento e ignición del cohete Exocet AM-39 (propelente sólido).
  *  - Impacto cinético y fuego incontrolable en el destructor Sheffield.
- *  - Tema militar épico/tenso en chiptune retro arcade de 16 bits.
+ *  (Música eliminada por solicitud para máximo realismo e inmersión histórica).
  * ============================================================================
  */
 (function (global) {
@@ -24,7 +24,7 @@
       this.isMuted = false;
       this.initialized = false;
 
-      // Nodos de sonido continuo
+      // Nodos continuos
       this.jetNode = null;
       this.jetGain = null;
       this.jetFilter = null;
@@ -40,11 +40,6 @@
 
       this.fireNode = null;
       this.fireGain = null;
-
-      // Sintetizador de música chiptune
-      this.musicPlaying = false;
-      this.musicTimer = null;
-      this.musicStep = 0;
     }
 
     init() {
@@ -83,9 +78,6 @@
       return this.isMuted;
     }
 
-    // ------------------------------------------------------------------------
-    // GENERADORES DE RUIDO Y AMBIENTE
-    // ------------------------------------------------------------------------
     _createNoiseBuffer(seconds = 2) {
       const bufferSize = this.ctx.sampleRate * seconds;
       const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
@@ -93,7 +85,6 @@
       let last = 0;
       for (let i = 0; i < bufferSize; i++) {
         const white = Math.random() * 2 - 1;
-        // Filtro browniano/rosa suave para cuerpo de motor y oleaje
         data[i] = (last + 0.05 * white) / 1.05;
         last = data[i];
       }
@@ -162,9 +153,6 @@
       this.fireNode = noise;
     }
 
-    // ------------------------------------------------------------------------
-    // ACTUALIZACIÓN DE SONIDO CONTINUO EN EL VUELO
-    // ------------------------------------------------------------------------
     updateFlightSound(flight, altitude, inFlight = true) {
       if (!this.initialized || !this.ctx || this.isMuted) return;
 
@@ -187,7 +175,7 @@
         this.jetFilter.frequency.setTargetAtTime(targetFreq, now, 0.08);
       }
 
-      // Modulación de oleaje rasante (a menor altitud, mayor rugido de olas)
+      // Modulación de oleaje rasante
       if (this.seaGain && this.seaFilter) {
         const seaVol = Math.max(0.04, Math.min(0.45, (22 - altitude) / 22 * 0.4));
         const seaFreq = Math.max(180, Math.min(480, 500 - altitude * 18));
@@ -196,7 +184,6 @@
       }
     }
 
-    // Alarma RWR (Radar Warning Receiver)
     startRwrAlarm() {
       if (this.rwrActive || !this.initialized || !this.ctx || this.isMuted) return;
       this.rwrActive = true;
@@ -222,14 +209,14 @@
       };
 
       beep();
-      this.rwrInterval = global.setInterval(beep, 180);
+      this.rwrInterval = (global.setInterval || setInterval)(beep, 180);
     }
 
     stopRwrAlarm() {
       if (!this.rwrActive) return;
       this.rwrActive = false;
       if (this.rwrInterval) {
-        global.clearInterval(this.rwrInterval);
+        (global.clearInterval || clearInterval)(this.rwrInterval);
         this.rwrInterval = null;
       }
     }
@@ -240,16 +227,10 @@
       this.fireGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.2);
     }
 
-    // ------------------------------------------------------------------------
-    // EFECTOS DE SONIDO PUNTUALES
-    // ------------------------------------------------------------------------
-
-    // Estática y tono de radio militar previa a orden de Bedacarratz
     playRadioComm() {
       if (!this.initialized || !this.ctx || this.isMuted) return;
       const now = this.ctx.currentTime;
 
-      // 1. Roger Beep de radio táctica
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
       osc.type = "sine";
@@ -264,7 +245,6 @@
       osc.start(now);
       osc.stop(now + 0.16);
 
-      // 2. Ruido blanco de canal abierto
       const noise = this.ctx.createBufferSource();
       noise.buffer = this._createNoiseBuffer(0.2);
       const nGain = this.ctx.createGain();
@@ -276,7 +256,6 @@
       noise.stop(now + 0.22);
     }
 
-    // Desprendimiento del misil Exocet del pilón alar
     playMissileRelease() {
       if (!this.initialized || !this.ctx || this.isMuted) return;
       const now = this.ctx.currentTime;
@@ -296,12 +275,10 @@
       osc.stop(now + 0.25);
     }
 
-    // Ignición potente y aceleración supersónica del motor cohete AM-39
     playRocketIgnition() {
       if (!this.initialized || !this.ctx || this.isMuted) return;
       const now = this.ctx.currentTime;
 
-      // Sub-bajo explosivo inicial
       const sub = this.ctx.createOscillator();
       const subGain = this.ctx.createGain();
       sub.type = "sawtooth";
@@ -316,7 +293,6 @@
       sub.start(now);
       sub.stop(now + 0.8);
 
-      // Rugido abrasivo de la tobera de propelente sólido
       const noise = this.ctx.createBufferSource();
       noise.buffer = this._createNoiseBuffer(1.8);
       const filter = this.ctx.createBiquadFilter();
@@ -337,12 +313,10 @@
       noise.stop(now + 1.8);
     }
 
-    // Impacto directo en el casco del Sheffield (perforación y rotura violenta)
     playShipImpact() {
       if (!this.initialized || !this.ctx || this.isMuted) return;
       const now = this.ctx.currentTime;
 
-      // Golpe sordo de perforación de blindaje (350 kg penetrando a Mach 0.9)
       const boom = this.ctx.createOscillator();
       const boomGain = this.ctx.createGain();
       boom.type = "square";
@@ -357,7 +331,6 @@
       boom.start(now);
       boom.stop(now + 0.7);
 
-      // Estallido de metal y combustible encendiéndose
       const noise = this.ctx.createBufferSource();
       noise.buffer = this._createNoiseBuffer(2.2);
       const filter = this.ctx.createBiquadFilter();
@@ -379,7 +352,6 @@
       this.setFireVolume(0.45);
     }
 
-    // Campana de colisión en el agua o misión fallida
     playFailureSound() {
       if (!this.initialized || !this.ctx || this.isMuted) return;
       const now = this.ctx.currentTime;
@@ -398,74 +370,11 @@
       osc.stop(now + 0.95);
     }
 
-    // ------------------------------------------------------------------------
-    // MÚSICA CHIPTUNE 16-BIT RETRO ARCADE (ARPEGIO MILITAR ÉPICO)
-    // ------------------------------------------------------------------------
     startMusic() {
-      if (this.musicPlaying || !this.initialized || !this.ctx) return;
-      this.musicPlaying = true;
-      this.musicStep = 0;
-
-      // Escala modal heroica menor (Am9 / Dm / F / E7) en arpegio arcade
-      const notes = [
-        220.0, 261.63, 329.63, 392.0, 440.0, 329.63, 261.63, 196.0, // A menor
-        220.0, 261.63, 329.63, 440.0, 523.25, 440.0, 329.63, 261.63,
-        174.61, 220.0, 261.63, 349.23, 440.0, 349.23, 261.63, 220.0, // F mayor
-        164.81, 207.65, 246.94, 329.63, 415.3, 329.63, 246.94, 164.81, // E dominante
-      ];
-
-      const bassNotes = [110.0, 110.0, 87.31, 82.41];
-
-      const tick = () => {
-        if (!this.musicPlaying || !this.ctx || this.isMuted) return;
-        const now = this.ctx.currentTime;
-
-        const note = notes[this.musicStep % notes.length];
-        const bassNote = bassNotes[Math.floor(this.musicStep / 8) % bassNotes.length];
-
-        // 1. Línea melódica / arpegio pulsante
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.type = "pulse" in osc ? "pulse" : "square";
-        osc.frequency.setValueAtTime(note, now);
-
-        gain.gain.setValueAtTime(0.08, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-
-        osc.connect(gain);
-        gain.connect(this.masterGain);
-        osc.start(now);
-        osc.stop(now + 0.13);
-
-        // 2. Línea de bajo militar en cada compás
-        if (this.musicStep % 4 === 0) {
-          const bassOsc = this.ctx.createOscillator();
-          const bassGain = this.ctx.createGain();
-          bassOsc.type = "triangle";
-          bassOsc.frequency.setValueAtTime(bassNote, now);
-
-          bassGain.gain.setValueAtTime(0.18, now);
-          bassGain.gain.exponentialRampToValueAtTime(0.005, now + 0.38);
-
-          bassOsc.connect(bassGain);
-          bassGain.connect(this.masterGain);
-          bassOsc.start(now);
-          bassOsc.stop(now + 0.4);
-        }
-
-        this.musicStep++;
-      };
-
-      this.musicTimer = global.setInterval(tick, 135); // ~111 BPM tempo militar
+      // Música desactivada a petición del usuario para ambientación realista
     }
 
-    stopMusic() {
-      this.musicPlaying = false;
-      if (this.musicTimer) {
-        global.clearInterval(this.musicTimer);
-        this.musicTimer = null;
-      }
-    }
+    stopMusic() {}
   }
 
   Malvinas.SoundEngine = SoundEngine;

@@ -48,3 +48,4 @@ html = html.replace(
 
 fs.writeFileSync(path.join(root, "sheffield_1982_standalone.html"), html, "utf8");
 console.log("Successfully built sheffield_1982_standalone.html. Size:", (fs.statSync(path.join(root, "sheffield_1982_standalone.html")).size / 1024).toFixed(1), "KB");
+
