@@ -129,43 +129,48 @@
       this.cloudSprites = cloudSprites;
 
       if (cloudSprites.length > 0) {
-        // Distribuir los 10 assets de nubes en 3 estratos atmosféricos proporcionados
+        // Distribuir los 10 assets de nubes en la franja visible del cielo (Y visible en pantalla: 6 a 135 px)
+        // En worldCanvas (con overscan Y=120): Y_world = Y_screen + 120 (rango 126 a 255 px)
         const count = 18;
         for (let i = 0; i < count; i++) {
           const plane = (i % 3) + 1;
           const spr = cloudSprites[i % cloudSprites.length];
-          let scale, screenY, driftSpeed, alpha, parallaxRatio;
+          let scale, worldY, driftSpeed, alpha, parallaxRatio;
 
           if (plane === 1) {
-            // Estrato 1: Cirros altos tenues (lejanos y lentos)
-            scale = 0.08 + Math.random() * 0.03;
-            screenY = 8 + Math.random() * 55;
-            driftSpeed = (0.2 + Math.random() * 0.2) * (Math.random() > 0.5 ? 1 : -1);
-            alpha = 0.60 + Math.random() * 0.15;
-            parallaxRatio = 0.05;
+            // Estrato 1: Nubes altas (Screen Y: 8 a 45) -> worldY: 128 a 165
+            scale = 0.36 + Math.random() * 0.08;
+            worldY = 128 + Math.random() * 37;
+            driftSpeed = (0.3 + Math.random() * 0.3) * (Math.random() > 0.5 ? 1 : -1);
+            alpha = 0.85 + Math.random() * 0.10;
+            parallaxRatio = 0.06;
           } else if (plane === 2) {
-            // Estrato 2: Altocúmulos medios
-            scale = 0.12 + Math.random() * 0.04;
-            screenY = 40 + Math.random() * 70;
-            driftSpeed = (0.35 + Math.random() * 0.3) * (Math.random() > 0.5 ? 1 : -1);
-            alpha = 0.75 + Math.random() * 0.15;
-            parallaxRatio = 0.11;
-          } else {
-            // Estrato 3: Estratocúmulos bajos costeros de Malvinas
-            scale = 0.15 + Math.random() * 0.04;
-            screenY = 90 + Math.random() * (HORIZON_WORLD_Y - 150);
+            // Estrato 2: Cúmulos medios (Screen Y: 35 a 85) -> worldY: 155 a 205
+            scale = 0.46 + Math.random() * 0.10;
+            worldY = 155 + Math.random() * 50;
             driftSpeed = (0.5 + Math.random() * 0.4) * (Math.random() > 0.5 ? 1 : -1);
-            alpha = 0.80 + Math.random() * 0.15;
-            parallaxRatio = 0.19;
+            alpha = 0.90 + Math.random() * 0.08;
+            parallaxRatio = 0.12;
+          } else {
+            // Estrato 3: Nubes bajas costeras sobre el horizonte (Screen Y: 70 a 125) -> worldY: 190 a 245
+            scale = 0.56 + Math.random() * 0.12;
+            worldY = 190 + Math.random() * 55;
+            driftSpeed = (0.7 + Math.random() * 0.4) * (Math.random() > 0.5 ? 1 : -1);
+            alpha = 0.94 + Math.random() * 0.06;
+            parallaxRatio = 0.20;
           }
+
+          // Distribuir uniformemente a lo largo del panorama X
+          const spanX = WORLD_W * 2.2;
+          const worldX = (i / count) * spanX - (spanX >> 1) + (Math.random() * 60 - 30);
 
           this.cloudEntities.push({
             sprite: spr,
             plane,
             parallaxRatio,
             scale,
-            worldX: (Math.random() * 2 - 1) * 1600,
-            screenY,
+            worldX,
+            worldY,
             driftSpeed,
             alpha,
           });
@@ -175,11 +180,12 @@
 
     update(dt, camera, flight, timeSec) {
       if (!this.enabled) return;
+      const maxBound = WORLD_W * 1.5;
       for (let i = 0; i < this.cloudEntities.length; i++) {
         const c = this.cloudEntities[i];
-        c.worldX += c.driftSpeed * dt * 8;
-        if (c.worldX > 1800) c.worldX -= 3600;
-        if (c.worldX < -1800) c.worldX += 3600;
+        c.worldX += c.driftSpeed * dt * 10;
+        if (c.worldX > maxBound) c.worldX -= maxBound * 2;
+        if (c.worldX < -maxBound) c.worldX += maxBound * 2;
       }
     },
 
@@ -211,14 +217,16 @@
       for (let i = 0; i < this.cloudEntities.length; i++) {
         const c = this.cloudEntities[i];
         if (!c.sprite) continue;
-        const drawX =
-          WORLD_CX +
-          (c.worldX - camera.heading * 280 * c.parallaxRatio) % WORLD_W;
+        const wrapSpan = WORLD_W * 2.2;
+        let drawX = WORLD_CX + (c.worldX - camera.heading * 280 * c.parallaxRatio);
+        while (drawX < -250) drawX += wrapSpan;
+        while (drawX > WORLD_W + 250) drawX -= wrapSpan;
+
         const w = Math.round(c.sprite.width * c.scale);
         const h = Math.round(c.sprite.height * c.scale);
         ctx.save();
-        ctx.globalAlpha = c.alpha || 0.8;
-        ctx.drawImage(c.sprite, drawX - (w >> 1), c.screenY, w, h);
+        ctx.globalAlpha = c.alpha || 0.92;
+        ctx.drawImage(c.sprite, drawX - (w >> 1), c.worldY - (h >> 1), w, h);
         ctx.restore();
       }
     },
@@ -268,39 +276,50 @@
         {
           name: "far",
           count: 28,
-          zMin: 1000,
+          zMin: 1050,
           zMax: 2400,
-          swellWMin: 22, swellWMax: 40,
-          breakerWMin: 16, breakerWMax: 28,
-          splashWMin: 14, splashWMax: 24,
+          swellWMin: 95, swellWMax: 155,
+          breakerWMin: 70, breakerWMax: 110,
+          splashWMin: 55, splashWMax: 90,
         },
         {
           name: "upperMid",
           count: 26,
-          zMin: 450,
-          zMax: 1000,
-          swellWMin: 32, swellWMax: 54,
-          breakerWMin: 22, breakerWMax: 38,
-          splashWMin: 18, splashWMax: 32,
+          zMin: 480,
+          zMax: 1050,
+          swellWMin: 75, swellWMax: 125,
+          breakerWMin: 55, breakerWMax: 90,
+          splashWMin: 45, splashWMax: 75,
         },
         {
           name: "mid",
-          count: 22,
-          zMin: 160,
-          zMax: 450,
-          swellWMin: 42, swellWMax: 72,
-          breakerWMin: 28, breakerWMax: 48,
-          splashWMin: 22, splashWMax: 40,
+          count: 24,
+          zMin: 175,
+          zMax: 480,
+          swellWMin: 58, swellWMax: 95,
+          breakerWMin: 45, breakerWMax: 75,
+          splashWMin: 36, splashWMax: 60,
         },
         {
           name: "near",
-          count: 16,
-          zMin: 36,
-          zMax: 160,
-          swellWMin: 55, swellWMax: 95,
-          breakerWMin: 38, breakerWMax: 65,
-          splashWMin: 28, splashWMax: 52,
+          count: 18,
+          zMin: 45,
+          zMax: 175,
+          swellWMin: 50, swellWMax: 80,
+          breakerWMin: 40, breakerWMax: 65,
+          splashWMin: 32, splashWMax: 52,
         },
+      ];
+
+      const waveTypeKeys = [
+        "swellLoop",
+        "gentleSwell",
+        "breakerRight",
+        "breakerLeft",
+        "splashRight",
+        "splashLeft",
+        "crestToSplashRight",
+        "crestToSplashLeft",
       ];
 
       for (let b = 0; b < bands.length; b++) {
@@ -310,18 +329,15 @@
           const frustumHalfW = (zRel / FOCAL_LENGTH) * (WORLD_W * 0.55);
           const x = (Math.random() * 2 - 1) * frustumHalfW;
 
-          const rollType = Math.random();
-          let type;
+          // Seleccionar equitativamente entre los tipos para máxima variedad de los 15 sprites
+          const type = waveTypeKeys[(b * 3 + i) % waveTypeKeys.length];
           let worldWidth;
 
-          if (rollType < 0.44) {
-            type = Math.random() < 0.55 ? "swellLoop" : "gentleSwell";
+          if (type.includes("swell") || type.includes("Swell")) {
             worldWidth = band.swellWMin + Math.random() * (band.swellWMax - band.swellWMin);
-          } else if (rollType < 0.78) {
-            type = Math.random() < 0.5 ? "breakerRight" : "breakerLeft";
+          } else if (type.includes("breaker")) {
             worldWidth = band.breakerWMin + Math.random() * (band.breakerWMax - band.breakerWMin);
           } else {
-            type = Math.random() < 0.5 ? "splashRight" : "splashLeft";
             worldWidth = band.splashWMin + Math.random() * (band.splashWMax - band.splashWMin);
           }
 
@@ -334,7 +350,7 @@
             zMax: band.zMax,
             worldWidth,
             animSpeed: 6.0 + Math.random() * 3.0,
-            frameIndex: Math.random() * 6,
+            frameIndex: Math.random() * 8,
           });
         }
       }
@@ -469,32 +485,29 @@
         if (!sprite) continue;
 
         // Ancho en pantalla proporcional a la escala 3D
-        const drawW = Math.max(6, Math.round(w.worldWidth * proj.scale));
+        const drawW = Math.max(8, Math.round(w.worldWidth * proj.scale));
 
-        // Altura con escorzo rasante proporcional
-        // Las olas lucen como auténtico oleaje oceánico continuo y rompientes proporcionadas
-        const grazingFactor = 0.11 + 0.05 * Math.min(1.0, w.z / 800.0);
-        const naturalH = Math.round(drawW * (sprite.height / sprite.width) * grazingFactor);
-        const minH = w.z > 900 ? 1 : 2;
-        const maxLimit = w.z > 900 ? 3 : w.z > 450 ? 5 : w.z > 160 ? 8 : 13;
+        // Altura con escorzo rasante proporcionado para visualización After Burner II
+        // Permite apreciar con nitidez los 15 sprites de olas, crestas blancas, rompientes y salpicaduras
+        const aspect = sprite.height / sprite.width;
+        const grazingFactor = 0.46 + 0.08 * Math.min(1.0, w.z / 900.0);
+        const naturalH = Math.round(drawW * aspect * grazingFactor);
+        const minH = w.z > 1200 ? 3 : w.z > 600 ? 5 : w.z > 250 ? 8 : 12;
+        const maxLimit = w.z > 1200 ? 9 : w.z > 600 ? 17 : w.z > 250 ? 28 : 44;
         const drawH = Math.max(minH, Math.min(maxLimit, naturalH));
 
-        // Base de la ola apoyada sobre la línea de agua en pantalla
+        // Base de la ola asentada en la línea de agua en pantalla
         const drawX = Math.round(proj.screenX - drawW * 0.5);
-        const drawY = Math.round(proj.screenY - drawH * 0.86);
+        const drawY = Math.round(proj.screenY - drawH * 0.82);
 
-        // Clamping estricto para que la cresta nunca sobrepase el horizonte hacia el cielo
-        if (drawY + drawH > HORIZON_WORLD_Y && drawY < WORLD_H && drawX + drawW > 0 && drawX < WORLD_W) {
-          const finalY = Math.max(HORIZON_WORLD_Y, drawY);
-          const finalH = Math.max(1, (drawY + drawH) - finalY);
-          const sy = Math.max(0, Math.min(sprite.height - 1, Math.round((finalY - drawY) * (sprite.height / drawH))));
-          const sH = Math.max(1, Math.min(sprite.height - sy, Math.round(finalH * (sprite.height / drawH))));
-
+        // Renderizado íntegro del sprite con su espuma blanca y cuerpo
+        // Permitir que la cresta de olas en el horizonte asome sutilmente (hasta 4px) para texturar la línea del mar
+        if (drawY + drawH > HORIZON_WORLD_Y - 4 && drawY < WORLD_H && drawX + drawW > -60 && drawX < WORLD_W + 60) {
           worldCtx.drawImage(
             sprite,
-            0, sy,
-            sprite.width, sH,
-            drawX, finalY, drawW, finalH
+            0, 0,
+            sprite.width, sprite.height,
+            drawX, drawY, drawW, drawH
           );
         }
       }
