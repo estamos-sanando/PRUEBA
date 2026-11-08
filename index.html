@@ -6,77 +6,176 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
-    <title>Malvinas — Motor Océano Pseudo-3D Super Scaler (16-Bit)</title>
+    <title>4 de Mayo de 1982 — Misión Secreta: Ataque al HMS Sheffield (Newsgaming 16-Bit)</title>
     <link rel="stylesheet" href="css/styles.css" />
   </head>
   <body>
     <main id="arcade-stage">
       <div id="viewport-frame">
-        <!-- Pantalla de arranque mientras se procesa transparencia alfa (#FFFFFF -> 0) -->
+        <!-- Pantalla de arranque inicial mientras se decodifican los sprites -->
         <div id="boot-overlay">
-          <div id="boot-status">PROCESANDO SPRITES &amp; SCANLINES 16-BIT...</div>
+          <div id="boot-status">CARGANDO ASSETS Y SCANLINES 16-BIT...</div>
           <div class="boot-bar-track">
             <div id="boot-bar-fill"></div>
           </div>
         </div>
 
-        <!-- Canvas principal pixel-art (640x360 escalado nítido sin deformar aspecto) -->
+        <!-- Canvas principal pixel-art (640x360 escalado nítido 16:9) -->
         <canvas id="game-canvas" tabindex="0"></canvas>
 
         <!-- Filtro opcional CRT 15kHz -->
         <div id="crt-overlay" class="hidden"></div>
 
-        <!-- Botón táctil móvil para postcombustión / aceleración -->
+        <!-- ------------------------------------------------------------------
+             MODAL 1: BRIEFING HISTÓRICO Y DESPEGUE (ETAPA INTRODUCCIÓN)
+             ------------------------------------------------------------------ -->
+        <div id="briefing-modal" class="game-modal">
+          <div class="modal-card">
+            <h1>4 de Mayo de 1982 — Misión Secreta</h1>
+            <h2>Despegue: Base Aeronaval Río Grande | Objetivo: Destructor HMS Sheffield (D80)</h2>
+            <div class="modal-body">
+              <p>
+                A media mañana del 4 de mayo de 1982, dos cazabombarderos
+                <strong>Dassault-Breguet Super Étendard</strong> de la 2da. Escuadrilla
+                Aeronaval de Caza y Ataque armados con misiles antibuque
+                <strong>Exocet AM-39</strong> despegan rumbo a las Islas Malvinas.
+              </p>
+              <div class="briefing-box">
+                <strong>PILOTOS DE LA ESCUADRILLA:</strong><br />
+                • Capitán de Corbeta <strong>Augusto Bedacarratz</strong> (Líder - indicativo "Tito")<br />
+                • Teniente de Fragata <strong>Armando Mayora</strong> (Numeral / Coequiper - TU AVIÓN)
+              </div>
+              <div class="briefing-box alert">
+                <strong>REGLA DE SIGILO Y ALTITUD (NEWSGAMING):</strong><br />
+                Para no ser detectados por el radar Type 965 del buque, debes volar en
+                <strong>vuelo rasante extremo (entre 6 y 12 metros)</strong>.<br />
+                • <strong>Si subes más de 15m:</strong> Se activa la alarma radar RWR y serás detectado.<br />
+                • <strong>Si bajas de 4m:</strong> Riesgo crítico de colisión con las olas bravas.
+              </div>
+              <p>
+                <strong>ATAQUE COORDINADO:</strong> Mantén la formación. Cuando Bedacarratz ordene
+                <em>"—¡¡Lanzar, ahora!! —"</em>, presiona <strong>[ESPACIO]</strong> o el gatillo
+                para soltar tu Exocet hacia el Sheffield.
+              </p>
+            </div>
+            <button id="btn-start-mission" class="btn-start" type="button">
+              🚀 INICIAR VUELO RASANTE [ESPACIO / ENTER]
+            </button>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------
+             MODAL 2: DEBRIEFING Y VICTORIA HISTÓRICA (ETAPA FINAL)
+             ------------------------------------------------------------------ -->
+        <div id="victory-modal" class="game-modal hidden">
+          <div class="modal-card">
+            <h1 style="color: #4dff91;">IMPACTO CONFIRMADO — 11:02 HS</h1>
+            <h2>Destructor Tipo 42 HMS Sheffield (D80) Neutralizado</h2>
+            <div class="modal-body">
+              <p>
+                El misil Exocet AM-39 impactó <strong>justo en el centro del buque (banda de estribor, sala de operaciones),
+                a 2.5 metros sobre la línea de flotación</strong>.
+              </p>
+              <div class="briefing-box">
+                <em>"El misil no explotó, pero el combustible del motor que no se había consumido todavía
+                ocasionó un incendio incontrolable de más de 1000°C con una columna de humo de 30 metros."</em>
+              </div>
+              <p>
+                Las bombas de achique y agua se quedaron sin energía. El Capitán Sam Salt ordenó el abandono
+                inmediato. El HMS Sheffield agonizó a la deriva hasta <strong>hundirse el 10 de mayo de 1982</strong>.
+              </p>
+              <div class="stats-grid">
+                <div class="stat-item">
+                  <span class="stat-label">Altitud Media Rasante</span>
+                  <span id="stat-avg-alt" class="stat-val">9.2 M</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">Detección Radar Evitada</span>
+                  <span id="stat-max-det" class="stat-val">100% OK</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">Misiles Lanzados</span>
+                  <span class="stat-val">2x AM-39</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">Efeméride Histórica</span>
+                  <span class="stat-val">Día de la Aviación Naval</span>
+                </div>
+              </div>
+            </div>
+            <button id="btn-replay-mission" class="btn-start" type="button">
+              ↺ REPETIR MISIÓN HISTÓRICA
+            </button>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------------
+             MODAL 3: MISIÓN ABORTADA / FALLO
+             ------------------------------------------------------------------ -->
+        <div id="failed-modal" class="game-modal hidden">
+          <div class="modal-card">
+            <h1 style="color: #ff4d4d;">MISIÓN ABORTADA</h1>
+            <h2 id="fail-title">No se logró el objetivo histórico</h2>
+            <div class="modal-body">
+              <p id="fail-desc">
+                La escuadrilla no pudo completar el lanzamiento coordinado.
+              </p>
+              <div class="briefing-box alert">
+                <strong>CONSEJO TÁCTICO:</strong> Mantén la altitud entre 6m y 12m usando
+                <kbd>W</kbd>/<kbd>S</kbd> o las flechas de altitud. No expongas el fuselaje
+                al haz del radar Type 965.
+              </div>
+            </div>
+            <button id="btn-retry-mission" class="btn-start btn-retry" type="button">
+              ↺ REINTENTAR APROXIMACIÓN RASANTE
+            </button>
+          </div>
+        </div>
+
+        <!-- Botones táctiles móviles -->
+        <button id="touch-fire-btn" type="button" aria-label="Lanzar Exocet">
+          💥<br />LANZAR
+        </button>
         <button id="touch-throttle-btn" type="button" aria-label="Acelerar">
           TURBO<br />RASANTE
         </button>
 
-        <!-- Barra modular de conmutación de las 5 capas desacopladas -->
-        <nav id="dev-toolbar" aria-label="Capas del motor">
-          <button class="layer-btn active" data-toggle="bg" title="Tecla 1">
-            [1] BG
-          </button>
-          <button class="layer-btn active" data-toggle="ocean" title="Tecla 2">
-            [2] OCEAN
-          </button>
-          <button class="layer-btn active" data-toggle="waves" title="Tecla 3">
-            [3] WAVES
-          </button>
-          <button class="layer-btn active" data-toggle="enemies" title="Tecla 4">
-            [4] ENEMIES
-          </button>
-          <button class="layer-btn active" data-toggle="player" title="Tecla 5">
-            [5] PLAYER
-          </button>
-          <button class="layer-btn active" data-toggle="hud" title="Tecla 6">
-            [6] HUD
+        <!-- Barra inferior modular -->
+        <nav id="dev-toolbar" aria-label="Control de la misión">
+          <button class="layer-btn active" id="btn-audio" title="Activar/Silenciar Audio">
+            🔊 AUDIO
           </button>
           <span class="toolbar-sep"></span>
-          <button class="layer-btn" id="btn-fire" title="Tecla E">
-            💥 EXOCET [E]
-          </button>
+          <button class="layer-btn active" data-toggle="bg" title="Cielo">[1] BG</button>
+          <button class="layer-btn active" data-toggle="ocean" title="Océano">[2] OCEAN</button>
+          <button class="layer-btn active" data-toggle="waves" title="Olas">[3] WAVES</button>
+          <button class="layer-btn active" data-toggle="enemies" title="HMS Sheffield">[4] SHEFFIELD</button>
+          <button class="layer-btn active" data-toggle="player" title="Super Étendard">[5] FORMACIÓN</button>
+          <button class="layer-btn active" data-toggle="hud" title="HUD">[6] HUD</button>
           <span class="toolbar-sep"></span>
-          <button class="layer-btn" data-toggle="crt" title="Tecla C">
-            [C] CRT
+          <button class="layer-btn" id="btn-fire" title="Lanzar misil Exocet AM-39">
+            💥 EXOCET [ESPACIO]
           </button>
+          <button class="layer-btn" data-toggle="crt" title="Filtro CRT">[C] CRT</button>
         </nav>
 
-        <!-- Guía compacta de vuelo -->
+        <!-- Guía rápida de controles -->
         <div class="controls-hint">
-          <kbd>←</kbd><kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd> Alabeo (±12°) &nbsp;|&nbsp;
-          <kbd>↑</kbd> / <kbd>W</kbd> Acelerar &nbsp;|&nbsp;
-          <kbd>E</kbd> Exocet &nbsp;|&nbsp;
-          <kbd>Espacio</kbd> Tonel
+          <kbd>W</kbd><kbd>S</kbd> Altitud (6-12m) &nbsp;|&nbsp;
+          <kbd>A</kbd><kbd>D</kbd> Alabeo (±12°) &nbsp;|&nbsp;
+          <kbd>Shift</kbd> Turbo &nbsp;|&nbsp;
+          <kbd>Espacio</kbd> Lanzar Exocet
         </div>
       </div>
     </main>
 
-    <!-- Orden modular sin ES-Modules para compatibilidad total en file:// y HTTP -->
+    <!-- Scripts modulares ordenados para ejecución instantánea sin servidor externo -->
     <script src="js/assets-manifest.js"></script>
+    <script src="js/audio.js"></script>
     <script src="js/asset-processor.js"></script>
     <script src="js/controls.js"></script>
+    <script src="js/newsgaming.js"></script>
     <script src="js/layers.js"></script>
     <script src="js/main.js"></script>
   </body>
 </html>
-

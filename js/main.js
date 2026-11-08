@@ -1,6 +1,11 @@
 /**
  * ============================================================================
- * MALVINAS 1982 — BUCLE PRINCIPAL SUPER SCALER & ORQUESTADOR DE CAPAS
+ * MALVINAS 1982 — BUCLE PRINCIPAL & ORQUESTADOR DEL NEWSGAMING HISTÓRICO
+ * ============================================================================
+ * Integra:
+ *  - Máquina de estados narrativos (Briefing -> Vuelo Rasante -> Ataque -> Final).
+ *  - Motor de Audio Chiptune 16 bits y turbina procedural.
+ *  - Renderizado Super Scaler de 5 capas en Canvas 640x360 pixel-perfect.
  * ============================================================================
  */
 (function (global) {
@@ -11,6 +16,8 @@
   function bootstrap() {
     const Config = Malvinas.Config;
     const Layers = Malvinas.Layers;
+    const news = Malvinas.newsgaming;
+    const sound = Malvinas.sound;
 
     const screenCanvas = document.getElementById("game-canvas");
     screenCanvas.width = Config.VIEW_W;
@@ -28,14 +35,79 @@
     const bootOverlay = document.getElementById("boot-overlay");
     const bootBar = document.getElementById("boot-bar-fill");
     const bootStatus = document.getElementById("boot-status");
-    const throttleBtn = document.getElementById("touch-throttle-btn");
+
+    const briefingModal = document.getElementById("briefing-modal");
+    const victoryModal = document.getElementById("victory-modal");
+    const failedModal = document.getElementById("failed-modal");
+    const failTitle = document.getElementById("fail-title");
+    const failDesc = document.getElementById("fail-desc");
+
+    const statAvgAlt = document.getElementById("stat-avg-alt");
+    const statMaxDet = document.getElementById("stat-max-det");
+
+    const btnStart = document.getElementById("btn-start-mission");
+    const btnReplay = document.getElementById("btn-replay-mission");
+    const btnRetry = document.getElementById("btn-retry-mission");
+    const btnAudio = document.getElementById("btn-audio");
+
+    const touchThrottleBtn = document.getElementById("touch-throttle-btn");
+    const touchFireBtn = document.getElementById("touch-fire-btn");
     const crtOverlay = document.getElementById("crt-overlay");
 
     const camera = Malvinas.createCameraState();
-    const controls = new Malvinas.FlightControls(screenCanvas, throttleBtn);
+    const controls = new Malvinas.FlightControls(
+      screenCanvas,
+      touchThrottleBtn,
+      touchFireBtn
+    );
 
     // ------------------------------------------------------------------------
-    // Conmutadores interactivos de capas modulares (Teclas 1..6 y C, o botones)
+    // GESTIÓN DE AUDIO Y BOTÓN MUTE
+    // ------------------------------------------------------------------------
+    if (btnAudio) {
+      btnAudio.addEventListener("click", () => {
+        const isMuted = sound.toggleMute();
+        btnAudio.textContent = isMuted ? "🔇 AUDIO: OFF" : "🔊 AUDIO: ON";
+        btnAudio.classList.toggle("active", !isMuted);
+        screenCanvas.focus();
+      });
+    }
+
+    // ------------------------------------------------------------------------
+    // CONTROLADORES DE MODALES Y ETAPAS HISTÓRICAS
+    // ------------------------------------------------------------------------
+    function startMissionFromBriefing() {
+      if (briefingModal) briefingModal.classList.add("hidden");
+      if (failedModal) failedModal.classList.add("hidden");
+      if (victoryModal) victoryModal.classList.add("hidden");
+
+      controls.resetFlight(9.5);
+      camera.x = 0;
+      camera.z = 0;
+      camera.heading = 0;
+
+      news.startMission();
+      screenCanvas.focus();
+    }
+
+    if (btnStart) btnStart.addEventListener("click", startMissionFromBriefing);
+    if (btnReplay) btnReplay.addEventListener("click", startMissionFromBriefing);
+    if (btnRetry) btnRetry.addEventListener("click", startMissionFromBriefing);
+
+    // Atajo de teclado para iniciar o disparar en el briefing
+    global.addEventListener("keydown", (e) => {
+      if (
+        (e.code === "Space" || e.code === "Enter") &&
+        briefingModal &&
+        !briefingModal.classList.contains("hidden")
+      ) {
+        startMissionFromBriefing();
+        e.preventDefault();
+      }
+    });
+
+    // ------------------------------------------------------------------------
+    // CONMUTADORES INTERACTIVOS DE CAPAS MODULARES
     // ------------------------------------------------------------------------
     function syncToolbarButtons() {
       document.querySelectorAll("[data-toggle]").forEach((btn) => {
@@ -53,21 +125,13 @@
     }
 
     function toggleFeature(key) {
-      if (key === "bg") {
-        Layers.LAYER_BACKGROUND.enabled = !Layers.LAYER_BACKGROUND.enabled;
-      } else if (key === "ocean") {
-        Layers.LAYER_OCEAN.enabled = !Layers.LAYER_OCEAN.enabled;
-      } else if (key === "waves") {
-        Layers.LAYER_OCEAN.wavesEnabled = !Layers.LAYER_OCEAN.wavesEnabled;
-      } else if (key === "enemies") {
-        Layers.LAYER_ENEMIES.enabled = !Layers.LAYER_ENEMIES.enabled;
-      } else if (key === "player") {
-        Layers.LAYER_PLAYER.enabled = !Layers.LAYER_PLAYER.enabled;
-      } else if (key === "hud") {
-        Layers.LAYER_HUD.enabled = !Layers.LAYER_HUD.enabled;
-      } else if (key === "crt") {
-        crtOverlay.classList.toggle("hidden");
-      }
+      if (key === "bg") Layers.LAYER_BACKGROUND.enabled = !Layers.LAYER_BACKGROUND.enabled;
+      else if (key === "ocean") Layers.LAYER_OCEAN.enabled = !Layers.LAYER_OCEAN.enabled;
+      else if (key === "waves") Layers.LAYER_OCEAN.wavesEnabled = !Layers.LAYER_OCEAN.wavesEnabled;
+      else if (key === "enemies") Layers.LAYER_ENEMIES.enabled = !Layers.LAYER_ENEMIES.enabled;
+      else if (key === "player") Layers.LAYER_PLAYER.enabled = !Layers.LAYER_PLAYER.enabled;
+      else if (key === "hud") Layers.LAYER_HUD.enabled = !Layers.LAYER_HUD.enabled;
+      else if (key === "crt") crtOverlay.classList.toggle("hidden");
       syncToolbarButtons();
     }
 
@@ -94,36 +158,10 @@
       else if (e.code === "Digit5") toggleFeature("player");
       else if (e.code === "Digit6") toggleFeature("hud");
       else if (e.code === "KeyC") toggleFeature("crt");
-      else if (e.code === "KeyE" || e.code === "KeyF") {
-        Layers.LAYER_ENEMIES.triggerAttack();
-      }
     });
 
     // ------------------------------------------------------------------------
-    // Soporte Drag & Drop para probar en vivo hojas combinadas sobre fondo #FFFFFF
-    // ------------------------------------------------------------------------
-    global.addEventListener("dragover", (e) => e.preventDefault());
-    global.addEventListener("drop", (e) => {
-      e.preventDefault();
-      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if (!file || !file.type.startsWith("image/")) return;
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        const img = new Image();
-        img.onload = () => {
-          const parsed = Malvinas.AssetProcessor.extractFromCombinedSpritesheet(img);
-          if (parsed) {
-            Layers.LAYER_OCEAN.hotSwapAssets(parsed.ocean, parsed.frames);
-          }
-        };
-        img.src = reader.result;
-      };
-      reader.readAsDataURL(file);
-    });
-
-    // ------------------------------------------------------------------------
-    // Carga y preprocesamiento alfa (#FFFFFF -> transparente) + inicio 60fps
+    // CARGA DE ASSETS & LOOP PRINCIPAL A 60 FPS
     // ------------------------------------------------------------------------
     Malvinas.AssetProcessor.loadAllAssets((progress) => {
       if (bootBar) bootBar.style.width = Math.round(progress * 100) + "%";
@@ -139,42 +177,84 @@
         if (bootOverlay) bootOverlay.classList.add("ready");
 
         let lastTs = performance.now();
+        let victoryShown = false;
+        let failShown = false;
 
         function frameLoop(now) {
           const dt = Math.min(0.05, Math.max(0.001, (now - lastTs) * 0.001));
           lastTs = now;
           const timeSec = now * 0.001;
 
-          // 1. Actualizar controles de vuelo (Roll -12°..+12° y Aceleración)
+          // 1. Manejo de gatillo de disparo
+          if (controls.consumeFireTrigger()) {
+            if (news.stage === Malvinas.STAGES.COORDINATED_ATTACK) {
+              Layers.LAYER_ENEMIES.triggerAttack();
+            }
+          }
+
+          // 2. Actualizar controles de vuelo (Alabeo, Altitud y Potencia)
+          const inFlight =
+            news.stage === Malvinas.STAGES.STEALTH_FLIGHT ||
+            news.stage === Malvinas.STAGES.COORDINATED_ATTACK ||
+            news.stage === Malvinas.STAGES.MISSILE_FLIGHT ||
+            news.stage === Malvinas.STAGES.IMPACT_AND_FIRE;
+
           const flight = controls.update(dt, timeSec);
 
-          // 2. Actualizar cinemática de cámara 3D sobre el océano
+          // 3. Actualizar la máquina de estados lúdica e histórica
+          news.update(dt, camera, flight, Layers.LAYER_ENEMIES);
+
+          // 4. Modulación de sonido procedural (Turbina, Oleaje y Alertas)
+          sound.updateFlightSound(flight, flight.altitudeMeters, inFlight);
+
+          // 5. Gestionar presentación de modales según estado
+          if (news.stage === Malvinas.STAGES.HISTORICAL_DEBRIEFING && !victoryShown) {
+            victoryShown = true;
+            if (statAvgAlt) statAvgAlt.textContent = news.stats.avgAltitude.toFixed(1) + " M";
+            if (statMaxDet) {
+              const safePercent = Math.max(0, 100 - news.stats.maxDetection).toFixed(0);
+              statMaxDet.textContent = safePercent + "% OK";
+            }
+            if (victoryModal) victoryModal.classList.remove("hidden");
+          } else if (news.stage !== Malvinas.STAGES.HISTORICAL_DEBRIEFING) {
+            victoryShown = false;
+          }
+
+          if (news.stage === Malvinas.STAGES.MISSION_FAILED && !failShown) {
+            failShown = true;
+            if (failDesc) failDesc.textContent = news.stats.failReason;
+            if (failedModal) failedModal.classList.remove("hidden");
+          } else if (news.stage !== Malvinas.STAGES.MISSION_FAILED) {
+            failShown = false;
+          }
+
+          // 6. Cinemática de cámara 3D sobre el océano
           camera.rollDeg = flight.rollDeg;
           camera.rollRad = flight.rollRad;
           camera.currentSpeed = camera.forwardSpeed * flight.speedMultiplier;
           camera.z += camera.currentSpeed * dt;
 
-          // Deslizamiento lateral X acoplado al alabeo y velocidad (Req #3)
-          const lateralVel =
-            Math.sin(flight.rollRad) * camera.currentSpeed * 2.25;
+          // Deslizamiento lateral acoplado al alabeo
+          const lateralVel = Math.sin(flight.rollRad) * camera.currentSpeed * 2.25;
           camera.x += lateralVel * dt;
           camera.heading += Math.sin(flight.rollRad) * 0.52 * dt;
-          camera.y = 52.0 - Math.max(0, flight.throttle) * 7.5;
+          // Altura de cámara vinculada a la altitud real de vuelo
+          camera.y = 44.0 + flight.altitudeMeters * 0.85;
 
-          // 3. Actualizar capas desacopladas en orden lógico
+          // 7. Actualizar capas de mundo
           Layers.LAYER_BACKGROUND.update(dt, camera, flight, timeSec);
           Layers.LAYER_OCEAN.update(dt, camera, flight, timeSec);
           Layers.LAYER_ENEMIES.update(dt, camera, flight, timeSec);
           Layers.LAYER_PLAYER.update(dt, camera, flight, timeSec);
-          Layers.LAYER_HUD.update(dt, camera, flight, timeSec);
+          Layers.LAYER_HUD.update(dt);
 
-          // 4. Renderizar capas de mundo (Z-Index 10, 20, 30) en el buffer con overscan
+          // 8. Renderizar capas de mundo (Z-Index 10, 20, 30) en buffer con overscan
           worldCtx.imageSmoothingEnabled = false;
           Layers.LAYER_BACKGROUND.render(worldCtx, camera);
           Layers.LAYER_OCEAN.render(worldCtx, camera);
           Layers.LAYER_ENEMIES.render(worldCtx, camera);
 
-          // 5. Proyectar mundo rotado por el ángulo de alabeo (-12° a +12°) al viewport
+          // 9. Proyectar mundo rotado según ángulo de alabeo (-12° a +12°) al viewport
           screenCtx.imageSmoothingEnabled = false;
           screenCtx.save();
           screenCtx.translate(Config.VIEW_W * 0.5, Config.HORIZON_SCREEN_Y);
@@ -186,7 +266,7 @@
           );
           screenCtx.restore();
 
-          // 6. Superponer avión del jugador (Z-Index 40) y HUD táctico (Z-Index 50)
+          // 10. Superponer formación Super Étendard (Z-Index 40) y HUD táctico (Z-Index 50)
           Layers.LAYER_PLAYER.render(screenCtx, camera, flight, timeSec);
           Layers.LAYER_HUD.render(
             screenCtx,
@@ -202,17 +282,18 @@
         requestAnimationFrame(frameLoop);
       })
       .catch((err) => {
-        console.error("[Malvinas Engine] Error iniciando assets:", err);
+        console.error("[Malvinas Newsgaming] Error iniciando:", err);
         if (bootStatus) {
           bootStatus.textContent = "ERROR CARGANDO ASSETS: " + err.message;
         }
       });
 
-    // Exportar API pública para inspección/extensión desde consola
     Malvinas.Runtime = {
       camera,
       controls,
       layers: Layers,
+      sound,
+      newsgaming: news,
     };
   }
 
@@ -222,4 +303,3 @@
     bootstrap();
   }
 })(window);
-

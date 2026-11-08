@@ -1,6 +1,6 @@
 /* ==========================================================================
- * MALVINAS 1982 — MOTOR PSEUDO-3D SUPER SCALER (16-BIT RETRO ENGINE)
- * Renderizado pixel-perfect (image-rendering: pixelated) responsivo 16:9
+ * MALVINAS 1982 — NEWSGAMING HISTÓRICO: ATAQUE AL HMS SHEFFIELD
+ * Estilos Retro Arcade 16-Bit, HUD Táctico, Modales Históricos y CRT 15kHz
  * ========================================================================== */
 
 :root {
@@ -8,7 +8,8 @@
   --hud-green: #4dff91;
   --hud-amber: #ffbe42;
   --hud-cyan: #57d7ff;
-  --hud-panel: rgba(6, 15, 28, 0.82);
+  --hud-red: #ff4d4d;
+  --hud-panel: rgba(6, 15, 28, 0.88);
   --hud-border: rgba(87, 215, 255, 0.38);
 }
 
@@ -32,7 +33,6 @@ body {
   touch-action: none;
 }
 
-/* Contenedor principal centrado con preservación estricta de relación de aspecto */
 #arcade-stage {
   position: relative;
   width: 100vw;
@@ -45,7 +45,6 @@ body {
 
 #viewport-frame {
   position: relative;
-  /* Escala a pantalla completa manteniendo 16:9 sin deformar jamás el pixel art */
   width: min(100vw, calc(100vh * (16 / 9)));
   height: min(100vh, calc(100vw * (9 / 16)));
   background: #071224;
@@ -53,7 +52,6 @@ body {
   overflow: hidden;
 }
 
-/* Canvas principal con pixel-art ultra nítido (Nearest-Neighbor en todos los navegadores) */
 #game-canvas {
   display: block;
   width: 100%;
@@ -65,7 +63,6 @@ body {
   cursor: crosshair;
 }
 
-/* Overlay opcional de líneas CRT estilo monitor arcade 15kHz */
 #crt-overlay {
   position: absolute;
   inset: 0;
@@ -90,7 +87,7 @@ body {
   opacity: 0;
 }
 
-/* Barra modular de diagnóstico / control de capas (desacoplada sobre LAYER_HUD) */
+/* Barra superior de herramientas y sonido */
 #dev-toolbar {
   position: absolute;
   left: 12px;
@@ -107,15 +104,6 @@ body {
   font-size: 11px;
   letter-spacing: 0.04em;
   backdrop-filter: blur(2px);
-  transition: opacity 0.25s ease, transform 0.25s ease;
-}
-
-#dev-toolbar.collapsed {
-  opacity: 0.2;
-}
-
-#dev-toolbar:hover {
-  opacity: 1;
 }
 
 .layer-btn {
@@ -178,36 +166,64 @@ body {
   font-size: 9.5px;
 }
 
-/* Botón táctil de postcombustión / aceleración para móviles */
+/* Botones táctiles móviles */
 #touch-throttle-btn {
   position: absolute;
   right: 18px;
   bottom: 48px;
   z-index: 75;
   display: none;
-  width: 68px;
-  height: 68px;
+  width: 66px;
+  height: 66px;
   border-radius: 50%;
-  background: rgba(255, 138, 36, 0.24);
-  border: 2px solid rgba(255, 190, 66, 0.75);
+  background: rgba(255, 138, 36, 0.28);
+  border: 2px solid rgba(255, 190, 66, 0.85);
   color: var(--hud-amber);
   font-family: inherit;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
   text-align: center;
   line-height: 1.15;
   box-shadow: 0 0 16px rgba(255, 140, 30, 0.35);
+  cursor: pointer;
 }
 
 #touch-throttle-btn.engaged {
-  background: rgba(255, 94, 20, 0.62);
+  background: rgba(255, 94, 20, 0.65);
   border-color: #fff2b2;
   color: #ffffff;
   transform: scale(0.95);
 }
 
+#touch-fire-btn {
+  position: absolute;
+  left: 18px;
+  bottom: 48px;
+  z-index: 75;
+  display: none;
+  width: 66px;
+  height: 66px;
+  border-radius: 50%;
+  background: rgba(255, 60, 40, 0.32);
+  border: 2px solid rgba(255, 80, 60, 0.85);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.15;
+  box-shadow: 0 0 16px rgba(255, 60, 40, 0.4);
+  cursor: pointer;
+}
+
+#touch-fire-btn.engaged {
+  background: rgba(255, 40, 20, 0.75);
+  transform: scale(0.95);
+}
+
 @media (pointer: coarse), (max-width: 820px) {
-  #touch-throttle-btn {
+  #touch-throttle-btn,
+  #touch-fire-btn {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -217,16 +233,16 @@ body {
   }
 }
 
-/* Pantalla de carga inicial */
+/* Pantalla de arranque de assets */
 #boot-overlay {
   position: absolute;
   inset: 0;
-  z-index: 90;
+  z-index: 95;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 12px;
   background: #050b16;
   color: var(--hud-cyan);
   font-size: 13px;
@@ -241,7 +257,7 @@ body {
 }
 
 .boot-bar-track {
-  width: 220px;
+  width: 240px;
   height: 6px;
   background: rgba(87, 215, 255, 0.14);
   border: 1px solid rgba(87, 215, 255, 0.45);
@@ -254,3 +270,142 @@ body {
   transition: width 0.12s linear;
 }
 
+/* ==========================================================================
+ * MODALES Y PANTALLAS DEL NEWSGAMING HISTÓRICO
+ * ========================================================================== */
+
+.game-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 85;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 8, 16, 0.88);
+  backdrop-filter: blur(4px);
+  padding: 20px;
+  transition: opacity 0.3s ease;
+}
+
+.game-modal.hidden {
+  display: none;
+}
+
+.modal-card {
+  max-width: 580px;
+  width: 100%;
+  background: rgba(6, 18, 36, 0.94);
+  border: 1px solid var(--hud-border);
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.8), 0 0 15px rgba(87, 215, 255, 0.15);
+  padding: 22px 26px;
+  color: #e6f4ff;
+  border-radius: 4px;
+}
+
+.modal-card h1 {
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  color: var(--hud-amber);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(255, 190, 66, 0.3);
+  padding-bottom: 6px;
+}
+
+.modal-card h2 {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--hud-cyan);
+  margin-bottom: 14px;
+  font-weight: 400;
+  text-transform: uppercase;
+}
+
+.modal-body {
+  font-size: 11px;
+  line-height: 1.55;
+  color: #c7def2;
+  margin-bottom: 18px;
+}
+
+.modal-body p {
+  margin-bottom: 10px;
+}
+
+.modal-body strong {
+  color: #ffffff;
+}
+
+.briefing-box {
+  background: rgba(10, 26, 48, 0.7);
+  border-left: 3px solid var(--hud-green);
+  padding: 8px 12px;
+  margin: 10px 0;
+  font-size: 10.5px;
+}
+
+.briefing-box.alert {
+  border-left-color: var(--hud-red);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 14px 0;
+  font-size: 11px;
+}
+
+.stat-item {
+  background: rgba(14, 34, 60, 0.6);
+  padding: 6px 10px;
+  border: 1px solid rgba(87, 215, 255, 0.2);
+}
+
+.stat-label {
+  font-size: 9px;
+  color: var(--hud-cyan);
+  text-transform: uppercase;
+  display: block;
+}
+
+.stat-val {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--hud-green);
+}
+
+.btn-start {
+  display: block;
+  width: 100%;
+  background: rgba(34, 139, 104, 0.7);
+  border: 1px solid var(--hud-green);
+  color: #ffffff;
+  padding: 10px 14px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  text-transform: uppercase;
+  border-radius: 2px;
+  box-shadow: 0 0 14px rgba(77, 255, 145, 0.25);
+  transition: all 0.15s ease;
+}
+
+.btn-start:hover {
+  background: rgba(34, 139, 104, 0.95);
+  box-shadow: 0 0 22px rgba(77, 255, 145, 0.5);
+  transform: translateY(-1px);
+}
+
+.btn-retry {
+  background: rgba(180, 40, 40, 0.7);
+  border-color: var(--hud-red);
+  box-shadow: 0 0 14px rgba(255, 77, 77, 0.25);
+}
+
+.btn-retry:hover {
+  background: rgba(200, 40, 40, 0.95);
+  box-shadow: 0 0 22px rgba(255, 77, 77, 0.5);
+}
