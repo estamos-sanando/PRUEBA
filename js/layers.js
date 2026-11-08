@@ -89,7 +89,7 @@
     skyCanvas: null,
     skySeamlessCanvas: null,
     skyTilePeriod: 0,
-    skyDrawHeight: HORIZON_WORLD_Y + 14,
+    skyDrawHeight: HORIZON_WORLD_Y + 16,
 
     cloudSprites: [],
     cloudEntities: [],
@@ -97,9 +97,11 @@
     init(assets) {
       if (assets.skyCanvas) {
         const src = assets.skyCanvas;
-        const aspect = src.width / src.height;
-        const tileW = Math.round(this.skyDrawHeight * aspect);
+        // Panorama amplio de 1920px: las nubes de fondo se renderizan a escala
+        // lejana y atmosférica, revelando el amplio cielo crepuscular de Malvinas
+        const tileW = 1920;
         this.skyTilePeriod = tileW * 2;
+        this.skyDrawHeight = HORIZON_WORLD_Y + 16;
 
         const c = document.createElement("canvas");
         c.width = this.skyTilePeriod;
@@ -107,8 +109,10 @@
         const ctx = c.getContext("2d");
         ctx.imageSmoothingEnabled = false;
 
-        // Mitad A: original | Mitad B: espejada (elimina costuras verticales al rotar)
+        // Mitad A: panorama extendido con el degradado del cielo y nubes lejanas
         ctx.drawImage(src, 0, 0, tileW + 1, this.skyDrawHeight);
+
+        // Mitad B: espejada para crear un bucle panorámico 360° continuo sin costuras
         ctx.save();
         ctx.translate(this.skyTilePeriod, 0);
         ctx.scale(-1, 1);
@@ -125,19 +129,22 @@
       this.cloudSprites = cloudSprites;
 
       if (cloudSprites.length > 0) {
-        const count = 14;
+        const count = 16;
         for (let i = 0; i < count; i++) {
           const plane = (i % 3) + 1;
-          const parallaxRatio = plane === 1 ? 0.08 : plane === 2 ? 0.16 : 0.28;
+          const parallaxRatio = plane === 1 ? 0.06 : plane === 2 ? 0.12 : 0.22;
           const spr = cloudSprites[i % cloudSprites.length];
+          // Nubes a escala proporcionada (0.11 a 0.21) para que no sean gigantes
+          // y se sitúen en la atmósfera alta sin obstruir el horizonte
           this.cloudEntities.push({
             sprite: spr,
             plane,
             parallaxRatio,
-            scale: 0.35 + plane * 0.24,
-            worldX: (Math.random() * 2 - 1) * 1400,
-            screenY: 18 + Math.random() * (HORIZON_WORLD_Y - 54),
-            driftSpeed: (0.8 + plane * 0.9) * (Math.random() > 0.5 ? 1 : -1),
+            scale: 0.10 + plane * 0.05,
+            worldX: (Math.random() * 2 - 1) * 1600,
+            screenY: 8 + Math.random() * (HORIZON_WORLD_Y - 95),
+            driftSpeed: (0.4 + plane * 0.5) * (Math.random() > 0.5 ? 1 : -1),
+            alpha: 0.72 + plane * 0.08,
           });
         }
       }
@@ -158,7 +165,7 @@
 
       if (this.skySeamlessCanvas) {
         const period = this.skyTilePeriod;
-        const parallaxX = (camera.heading * 220 + camera.x * 0.05) % period;
+        const parallaxX = (camera.heading * 260 + camera.x * 0.04) % period;
         let baseDrawX = -parallaxX;
         while (baseDrawX > 0) baseDrawX -= period;
         while (baseDrawX + period < WORLD_W) {
@@ -180,16 +187,19 @@
         if (!c.sprite) continue;
         const drawX =
           WORLD_CX +
-          (c.worldX - camera.heading * 320 * c.parallaxRatio) % WORLD_W;
+          (c.worldX - camera.heading * 280 * c.parallaxRatio) % WORLD_W;
         const w = Math.round(c.sprite.width * c.scale);
         const h = Math.round(c.sprite.height * c.scale);
+        ctx.save();
+        ctx.globalAlpha = c.alpha || 0.8;
         ctx.drawImage(c.sprite, drawX - (w >> 1), c.screenY, w, h);
+        ctx.restore();
       }
     },
   };
 
   // ==========================================================================
-  // [20] LAYER_OCEAN — MOTOR PSEUDO-3D DE SCANLINES UV + OLAS RASANTES
+  // [20] LAYER_OCEAN — MOTOR PSEUDO-3D DE SCANLINES UV + OLAS RASANTES DINÁMICAS
   // ==========================================================================
   const LAYER_OCEAN = {
     name: "LAYER_OCEAN",
@@ -206,6 +216,7 @@
     scanlineBuf32: null,
 
     waveEntities: [],
+    timeSec: 0,
 
     init(assets) {
       this.oceanData = assets.ocean || assets.oceanSurfaceData || null;
@@ -228,22 +239,65 @@
     _buildWaveField() {
       this.waveEntities = [];
       const bands = [
-        { name: "far", count: 8, zMin: 950, zMax: 2200, wMin: 12, wMax: 21 },
-        { name: "upperMid", count: 9, zMin: 520, zMax: 950, wMin: 16, wMax: 26 },
-        { name: "mid", count: 9, zMin: 200, zMax: 520, wMin: 19, wMax: 30 },
-        { name: "near", count: 8, zMin: 45, zMax: 200, wMin: 24, wMax: 38 },
+        {
+          name: "far",
+          count: 24,
+          zMin: 850,
+          zMax: 2300,
+          swellWMin: 55, swellWMax: 95,
+          breakerWMin: 35, breakerWMax: 65,
+          splashWMin: 28, splashWMax: 48,
+        },
+        {
+          name: "upperMid",
+          count: 24,
+          zMin: 420,
+          zMax: 850,
+          swellWMin: 75, swellWMax: 125,
+          breakerWMin: 48, breakerWMax: 85,
+          splashWMin: 36, splashWMax: 60,
+        },
+        {
+          name: "mid",
+          count: 22,
+          zMin: 150,
+          zMax: 420,
+          swellWMin: 95, swellWMax: 160,
+          breakerWMin: 60, breakerWMax: 110,
+          splashWMin: 45, splashWMax: 75,
+        },
+        {
+          name: "near",
+          count: 18,
+          zMin: 32,
+          zMax: 150,
+          swellWMin: 120, swellWMax: 210,
+          breakerWMin: 75, breakerWMax: 130,
+          splashWMin: 55, splashWMax: 90,
+        },
       ];
 
       for (let b = 0; b < bands.length; b++) {
         const band = bands[b];
         for (let i = 0; i < band.count; i++) {
           const zRel = band.zMin + Math.random() * (band.zMax - band.zMin);
-          const frustumHalfW = (zRel / FOCAL_LENGTH) * (WORLD_W * 0.52);
+          const frustumHalfW = (zRel / FOCAL_LENGTH) * (WORLD_W * 0.55);
           const x = (Math.random() * 2 - 1) * frustumHalfW;
-          const isBreaker = Math.random() < 0.45;
-          const type = isBreaker
-            ? Math.random() < 0.5 ? "breakerLeft" : "breakerRight"
-            : Math.random() < 0.5 ? "swellLoop" : "gentleSwell";
+
+          const rollType = Math.random();
+          let type;
+          let worldWidth;
+
+          if (rollType < 0.42) {
+            type = Math.random() < 0.55 ? "swellLoop" : "gentleSwell";
+            worldWidth = band.swellWMin + Math.random() * (band.swellWMax - band.swellWMin);
+          } else if (rollType < 0.78) {
+            type = Math.random() < 0.5 ? "breakerRight" : "breakerLeft";
+            worldWidth = band.breakerWMin + Math.random() * (band.breakerWMax - band.breakerWMin);
+          } else {
+            type = Math.random() < 0.5 ? "splashRight" : "splashLeft";
+            worldWidth = band.splashWMin + Math.random() * (band.splashWMax - band.splashWMin);
+          }
 
           this.waveEntities.push({
             type,
@@ -252,7 +306,7 @@
             z: zRel,
             zMin: band.zMin,
             zMax: band.zMax,
-            worldWidth: band.wMin + Math.random() * (band.wMax - band.wMin),
+            worldWidth,
             animSpeed: 5.5 + Math.random() * 3.5,
             frameIndex: Math.random() * 6,
           });
@@ -262,6 +316,7 @@
 
     update(dt, camera, flight, timeSec) {
       if (!this.enabled) return;
+      this.timeSec = timeSec;
 
       const oceanSpeed = camera.currentSpeed;
       for (let i = 0; i < this.waveEntities.length; i++) {
@@ -271,7 +326,7 @@
 
         if (w.z <= Z_CLIP_NEAR) {
           w.z += w.zMax - w.zMin;
-          const frustumHalfW = (w.z / FOCAL_LENGTH) * (WORLD_W * 0.54);
+          const frustumHalfW = (w.z / FOCAL_LENGTH) * (WORLD_W * 0.55);
           w.x = camera.x + (Math.random() * 2 - 1) * frustumHalfW;
           w.frameIndex = 0;
         }
@@ -281,7 +336,6 @@
     _renderScanlineSurface(worldCtx, camera) {
       const oData = this.oceanData;
       if (!oData || !oData.tex32 || !this.scanlineBuf32) {
-        // Fallback elegante que dibuja el océano desde HORIZON_WORLD_Y hasta el fondo
         const grad = worldCtx.createLinearGradient(0, HORIZON_WORLD_Y, 0, WORLD_H);
         grad.addColorStop(0, "#083e74");
         grad.addColorStop(0.35, "#0b589f");
@@ -307,6 +361,7 @@
 
       const camX = camera.x;
       const camZ = camera.z;
+      const tSec = this.timeSec || 0;
 
       let outIdx = 0;
 
@@ -317,16 +372,21 @@
         const vCoord = ((camZ + z) * V_SCALE) | 0;
         const vRowOffset = (vCoord & maskV) << shiftV;
 
-        const worldLeftX = camX - WORLD_CX * invScale;
+        // Ondulación horizontal del agua por scanline estilo Super Scaler (movimiento fluido y vivo)
+        const swellDisplacement =
+          Math.sin(z * 0.038 - tSec * 3.4) * Math.min(18.0, 260.0 / (dy + 12)) +
+          Math.cos(z * 0.082 + tSec * 4.6) * 2.2;
+        const worldLeftX = camX + swellDisplacement - WORLD_CX * invScale;
+
         let uFixed = (worldLeftX * U_SCALE * 65536.0) | 0;
         const stepUFixed = (invScale * U_SCALE * 65536.0) | 0;
 
-        if (dy < 42 && horizonLUT) {
-          const lutIdx = Math.min(lutMax, ((dy / 41) * lutMax) | 0);
+        if (dy < 44 && horizonLUT) {
+          const lutIdx = Math.min(lutMax, ((dy / 43) * lutMax) | 0);
           const hr = horizonLUT[lutIdx * 3];
           const hg = horizonLUT[lutIdx * 3 + 1];
           const hb = horizonLUT[lutIdx * 3 + 2];
-          const fogWeight = (((42 - dy) * 220) / 42) | 0;
+          const fogWeight = (((44 - dy) * 215) / 44) | 0;
           const texWeight = 256 - fogWeight;
 
           for (let px = 0; px < WORLD_W; px++) {
@@ -356,13 +416,16 @@
       this.scanlineCtx.putImageData(this.scanlineImgData, 0, 0);
       worldCtx.drawImage(this.scanlineCanvas, 0, HORIZON_WORLD_Y);
 
-      // Resplandor sutil en la línea de horizonte
-      worldCtx.fillStyle = "rgba(180, 230, 255, 0.45)";
+      // Resplandor crepuscular dorado en la línea exacta del horizonte
+      worldCtx.fillStyle = "rgba(255, 215, 140, 0.40)";
       worldCtx.fillRect(0, HORIZON_WORLD_Y, WORLD_W, 1);
     },
 
     _renderDynamicWaves(worldCtx, camera) {
       if (!this.wavesEnabled || !this.waveAssets) return;
+
+      // Ordenar por Z descendente (painter's algorithm: atrás hacia adelante)
+      this.waveEntities.sort((a, b) => b.z - a.z);
 
       for (let i = 0; i < this.waveEntities.length; i++) {
         const w = this.waveEntities[i];
@@ -379,15 +442,31 @@
         const sprite = seq[fIdx];
         if (!sprite) continue;
 
-        const drawW = Math.max(4, Math.round(w.worldWidth * proj.scale));
-        const grazing = 0.05 + 0.12 * (w.z / Z_HORIZON_FAR);
-        const drawH = Math.max(1, Math.min(6, Math.round(drawW * grazing)));
+        // Ancho en pantalla proporcional a la escala 3D
+        const drawW = Math.max(8, Math.round(w.worldWidth * proj.scale));
 
+        // Altura con escorzo rasante proporcional
+        // Las olas cercanas lucen imponentes (14-28px de altura), con espuma y cresta visible
+        const grazingFactor = 0.16 + 0.08 * Math.min(1.0, w.z / 800.0);
+        const naturalH = Math.round(drawW * (sprite.height / sprite.width) * grazingFactor);
+        const minH = w.z > 800 ? 2 : 4;
+        const maxH = Math.round(28 * Math.min(1.2, proj.scale));
+        const drawH = Math.max(minH, Math.min(maxH, naturalH));
+
+        // Base de la ola apoyada sobre la línea de agua en pantalla
         const drawX = Math.round(proj.screenX - drawW * 0.5);
-        const drawY = Math.round(proj.screenY - drawH * 0.85);
+        const drawY = Math.round(proj.screenY - drawH * 0.88);
 
-        if (drawY >= HORIZON_WORLD_Y && drawX + drawW > 0 && drawX < WORLD_W) {
-          worldCtx.drawImage(sprite, drawX, drawY, drawW, drawH);
+        // Clamping estricto para que la cresta nunca sobrepase el horizonte hacia el cielo
+        if (drawY + drawH > HORIZON_WORLD_Y && drawY < WORLD_H && drawX + drawW > 0 && drawX < WORLD_W) {
+          const finalY = Math.max(HORIZON_WORLD_Y, drawY);
+          const finalH = Math.max(1, (drawY + drawH) - finalY);
+          worldCtx.drawImage(
+            sprite,
+            0, Math.round((finalY - drawY) * (sprite.height / drawH)),
+            sprite.width, Math.round(finalH * (sprite.height / drawH)),
+            drawX, finalY, drawW, finalH
+          );
         }
       }
     },

@@ -275,9 +275,9 @@
     const w = imageData.width;
     const h = imageData.height;
 
-    const SEA_R = 8;
-    const SEA_G = 132;
-    const SEA_B = 212;
+    const SEA_R = 10;
+    const SEA_G = 88;
+    const SEA_B = 162;
 
     for (let x = 0; x < w; x++) {
       let topY = -1;
@@ -293,17 +293,8 @@
       const normX = w > 1 ? x / (w - 1) : 0.5;
       const edgeDist = Math.min(normX, 1.0 - normX);
 
-      let hFade = 1.0;
-      let spanScale = 1.0;
-      if (waveMode === "swell") {
-        hFade = smoothstep(0.0, 0.24, edgeDist);
-        spanScale = 0.34 + 0.66 * smoothstep(0.0, 0.3, edgeDist);
-      } else if (waveMode === "breaker") {
-        hFade = smoothstep(0.0, 0.08, edgeDist);
-      }
-
-      const rawSpan = botY - topY + 1;
-      const activeSpan = Math.max(3, rawSpan * spanScale);
+      // Suave ahusamiento lateral solo en los extremos (4% exterior)
+      const hFade = smoothstep(0.0, 0.04, edgeDist);
 
       for (let y = topY; y <= botY; y++) {
         const p = (y * w + x) * 4;
@@ -313,57 +304,33 @@
         let g = d[p + 1];
         let b = d[p + 2];
 
-        // Integrar contornos muy oscuros/negros al azul cobalto del Atlántico Sur
-        if (r < 36 && g < 92 && b < 175) {
-          r = Math.max(r, 6);
-          g = Math.max(g, 102);
-          b = Math.max(b, 194);
+        // Preservar íntegramente la espuma blanca y turquesa
+        const isFoam =
+          (r > 140 && g > 200 && b > 220) || (g > 175 && b > 220) || (r > 210 && g > 210 && b > 210);
+
+        // Suavizar contornos negros residuales hacia azul marino profundo
+        if (!isFoam && r < 32 && g < 75 && b < 145) {
+          r = Math.max(r, 8);
+          g = Math.max(g, 65);
+          b = Math.max(b, 140);
           d[p] = r;
           d[p + 1] = g;
           d[p + 2] = b;
         }
 
-        const isFoam =
-          (r > 135 && g > 205 && b > 230) || (g > 170 && b > 222);
-
-        const relY = (y - topY) / activeSpan;
+        // Fundido orgánico EXCLUSIVAMENTE en los últimos 5 píxeles de la base inferior
+        // (preserva el 100% de la altura, el cuerpo y las crestas de la ola)
         const bottomPx = botY - y;
         let vFade = 1.0;
-
-        if (waveMode === "swell") {
-          const startFade = isFoam ? 0.48 : 0.26;
-          if (relY > startFade) {
-            vFade = 1.0 - smoothstep(startFade, 0.88, relY);
-          }
-          if (bottomPx < 6) {
-            vFade *= smoothstep(0, 6, bottomPx);
-          }
-        } else if (waveMode === "breaker") {
-          const startFade = isFoam ? 0.58 : 0.38;
-          if (relY > startFade) {
-            vFade = 1.0 - smoothstep(startFade, 0.88, relY);
-          }
-          // Garantiza alfa = 0 estricto en las filas inferiores incluso en las colas finas
-          if (bottomPx < 7) {
-            vFade *= smoothstep(0, 7, bottomPx);
-          }
-        } else if (waveMode === "splash") {
-          if (h - 1 - y < 14 && !isFoam) {
-            vFade = smoothstep(0, 14, h - 1 - y);
-          }
+        if (bottomPx < 5) {
+          vFade = smoothstep(0.0, 5.0, bottomPx);
         }
 
         const finalAlpha = Math.round(255 * hFade * vFade);
-        if (finalAlpha < 10) {
+        if (finalAlpha < 8) {
           d[p + 3] = 0;
         } else {
-          if (!isFoam && vFade < 0.9) {
-            const tint = (1.0 - vFade) * 0.72;
-            d[p] = Math.round(r * (1 - tint) + SEA_R * tint);
-            d[p + 1] = Math.round(g * (1 - tint) + SEA_G * tint);
-            d[p + 2] = Math.round(b * (1 - tint) + SEA_B * tint);
-          }
-          d[p + 3] = finalAlpha;
+          d[p + 3] = Math.min(d[p + 3], finalAlpha);
         }
       }
     }
@@ -443,8 +410,8 @@
 
   /**
    * Desenrolla (UV Unwrap) el trapezoide en perspectiva de `oceano.png` a una
-   * textura de alta resolución `1024 x 256` con costura toroidal Bayer (sin espejo
-   * simétrico central, conservando el 100% de nitidez pixel-art en primer plano).
+   * textura de alta resolución `1024 x 256` con mapeo toroidal matemáticamente continuo
+   * (elimina por completo cualquier costura o línea vertical central y preserva el pixel art).
    */
   function buildOceanSurfaceData(oceanImg, rect) {
     const cleanTrap = extractCleanSprite(oceanImg, rect);
@@ -472,8 +439,8 @@
       if (lx !== -1 && rx - lx > 64) {
         rowSpans.push({
           y: y,
-          lx: lx + 6,
-          rx: rx - 6,
+          lx: lx + 4,
+          rx: rx - 4,
         });
       }
     }
@@ -484,11 +451,11 @@
       }
     }
 
-    // 1. LUT atmosférica del horizonte (franja superior del trapezoide)
+    // 1. LUT atmosférica del horizonte (franja superior lejana del mar)
     const LUT_SIZE = 64;
     const horizonLUT = new Uint8Array(LUT_SIZE * 3);
     const horizonSpanCount = Math.min(
-      38,
+      36,
       Math.max(8, (rowSpans.length * 0.22) | 0)
     );
     for (let i = 0; i < LUT_SIZE; i++) {
@@ -504,19 +471,17 @@
       horizonLUT[i * 3 + 2] = srcData[p + 2];
     }
 
-    // 2. Textura 1024x256 directa con costura toroidal Bayer de 96px en U y 40px en V
-    //    (elimina por completo la línea de simetría central y cuadruplica el detalle)
+    // 2. Textura 1024x256 toroidal continua con mapeo ping-pong simétrico
+    //    (garantiza que en tu=0 y tu=1023 el valor de normU sea 0.16 exacto, eliminando la costura central)
     const TEX_W = 1024;
     const TEX_H = 256;
-    const BLEND_U = 96;
-    const BLEND_V = 40;
 
     const texBuffer = new ArrayBuffer(TEX_W * TEX_H * 4);
     const texBytes = new Uint8ClampedArray(texBuffer);
     const tex32 = new Uint32Array(texBuffer);
 
-    const startRowIdx = Math.floor(rowSpans.length * 0.42);
-    const endRowIdx = Math.max(startRowIdx + 8, rowSpans.length - 3);
+    const startRowIdx = Math.floor(rowSpans.length * 0.28);
+    const endRowIdx = Math.max(startRowIdx + 8, rowSpans.length - 2);
     const bodyCount = endRowIdx - startRowIdx + 1;
 
     function sampleTrapezoid(normU, normV) {
@@ -530,36 +495,27 @@
     }
 
     for (let tv = 0; tv < TEX_H; tv++) {
-      // Coordenada V principal en [0 .. 0.84] con reserva [0.84 .. 1.0] para wrap toroidal
-      const uScale = 0.86;
-      const vScale = 0.84;
-      const baseNormV = (tv / TEX_H) * vScale;
+      const vNorm = tv / TEX_H;
+      const vScale = 0.88;
+      const baseNormV = vNorm * vScale;
 
       for (let tu = 0; tu < TEX_W; tu++) {
-        const baseNormU = (tu / TEX_W) * uScale;
+        // Enlace ping-pong simétrico continuo:
+        // tu=0 -> normU=0.16 | tu=512 -> normU=0.84 | tu=1023 -> normU=0.1613
+        const normU = 0.16 + 0.68 * (1.0 - Math.abs((tu / (TEX_W * 0.5)) - 1.0));
+
+        // Suave transición toroidal vertical
+        let finalV = baseNormV;
         const bayer = BAYER_4X4[(tv >> 1) & 3][(tu >> 1) & 3];
-
-        // Costura horizontal sin espejo: en los últimos BLEND_U píxeles enlaza con el borde derecho
-        let useWrapU = false;
-        if (tu >= TEX_W - BLEND_U) {
-          const tU = (tu - (TEX_W - BLEND_U)) / BLEND_U;
-          useWrapU = tU > bayer;
-        }
-        const finalU = useWrapU
-          ? uScale + ((tu - (TEX_W - BLEND_U)) / BLEND_U) * (1.0 - uScale)
-          : baseNormU + (1.0 - uScale);
-
-        // Costura vertical sin espejo
-        let useWrapV = false;
+        const BLEND_V = 36;
         if (tv >= TEX_H - BLEND_V) {
           const tV = (tv - (TEX_H - BLEND_V)) / BLEND_V;
-          useWrapV = tV > bayer;
+          if (tV > bayer) {
+            finalV = tV * 0.12;
+          }
         }
-        const finalV = useWrapV
-          ? ((tv - (TEX_H - BLEND_V)) / BLEND_V) * (1.0 - vScale)
-          : baseNormV + (1.0 - vScale);
 
-        const sp = sampleTrapezoid(finalU, finalV);
+        const sp = sampleTrapezoid(normU, finalV);
         const dp = (tv * TEX_W + tu) * 4;
         texBytes[dp] = srcData[sp];
         texBytes[dp + 1] = srcData[sp + 1];

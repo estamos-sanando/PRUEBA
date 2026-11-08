@@ -1310,9 +1310,9 @@ window.MALVINAS_ASSETS_MANIFEST = {
     const w = imageData.width;
     const h = imageData.height;
 
-    const SEA_R = 8;
-    const SEA_G = 132;
-    const SEA_B = 212;
+    const SEA_R = 10;
+    const SEA_G = 88;
+    const SEA_B = 162;
 
     for (let x = 0; x < w; x++) {
       let topY = -1;
@@ -1328,17 +1328,8 @@ window.MALVINAS_ASSETS_MANIFEST = {
       const normX = w > 1 ? x / (w - 1) : 0.5;
       const edgeDist = Math.min(normX, 1.0 - normX);
 
-      let hFade = 1.0;
-      let spanScale = 1.0;
-      if (waveMode === "swell") {
-        hFade = smoothstep(0.0, 0.24, edgeDist);
-        spanScale = 0.34 + 0.66 * smoothstep(0.0, 0.3, edgeDist);
-      } else if (waveMode === "breaker") {
-        hFade = smoothstep(0.0, 0.08, edgeDist);
-      }
-
-      const rawSpan = botY - topY + 1;
-      const activeSpan = Math.max(3, rawSpan * spanScale);
+      // Suave ahusamiento lateral solo en los extremos (4% exterior)
+      const hFade = smoothstep(0.0, 0.04, edgeDist);
 
       for (let y = topY; y <= botY; y++) {
         const p = (y * w + x) * 4;
@@ -1348,57 +1339,33 @@ window.MALVINAS_ASSETS_MANIFEST = {
         let g = d[p + 1];
         let b = d[p + 2];
 
-        // Integrar contornos muy oscuros/negros al azul cobalto del Atlántico Sur
-        if (r < 36 && g < 92 && b < 175) {
-          r = Math.max(r, 6);
-          g = Math.max(g, 102);
-          b = Math.max(b, 194);
+        // Preservar íntegramente la espuma blanca y turquesa
+        const isFoam =
+          (r > 140 && g > 200 && b > 220) || (g > 175 && b > 220) || (r > 210 && g > 210 && b > 210);
+
+        // Suavizar contornos negros residuales hacia azul marino profundo
+        if (!isFoam && r < 32 && g < 75 && b < 145) {
+          r = Math.max(r, 8);
+          g = Math.max(g, 65);
+          b = Math.max(b, 140);
           d[p] = r;
           d[p + 1] = g;
           d[p + 2] = b;
         }
 
-        const isFoam =
-          (r > 135 && g > 205 && b > 230) || (g > 170 && b > 222);
-
-        const relY = (y - topY) / activeSpan;
+        // Fundido orgánico EXCLUSIVAMENTE en los últimos 5 píxeles de la base inferior
+        // (preserva el 100% de la altura, el cuerpo y las crestas de la ola)
         const bottomPx = botY - y;
         let vFade = 1.0;
-
-        if (waveMode === "swell") {
-          const startFade = isFoam ? 0.48 : 0.26;
-          if (relY > startFade) {
-            vFade = 1.0 - smoothstep(startFade, 0.88, relY);
-          }
-          if (bottomPx < 6) {
-            vFade *= smoothstep(0, 6, bottomPx);
-          }
-        } else if (waveMode === "breaker") {
-          const startFade = isFoam ? 0.58 : 0.38;
-          if (relY > startFade) {
-            vFade = 1.0 - smoothstep(startFade, 0.88, relY);
-          }
-          // Garantiza alfa = 0 estricto en las filas inferiores incluso en las colas finas
-          if (bottomPx < 7) {
-            vFade *= smoothstep(0, 7, bottomPx);
-          }
-        } else if (waveMode === "splash") {
-          if (h - 1 - y < 14 && !isFoam) {
-            vFade = smoothstep(0, 14, h - 1 - y);
-          }
+        if (bottomPx < 5) {
+          vFade = smoothstep(0.0, 5.0, bottomPx);
         }
 
         const finalAlpha = Math.round(255 * hFade * vFade);
-        if (finalAlpha < 10) {
+        if (finalAlpha < 8) {
           d[p + 3] = 0;
         } else {
-          if (!isFoam && vFade < 0.9) {
-            const tint = (1.0 - vFade) * 0.72;
-            d[p] = Math.round(r * (1 - tint) + SEA_R * tint);
-            d[p + 1] = Math.round(g * (1 - tint) + SEA_G * tint);
-            d[p + 2] = Math.round(b * (1 - tint) + SEA_B * tint);
-          }
-          d[p + 3] = finalAlpha;
+          d[p + 3] = Math.min(d[p + 3], finalAlpha);
         }
       }
     }
@@ -1478,8 +1445,8 @@ window.MALVINAS_ASSETS_MANIFEST = {
 
   /**
    * Desenrolla (UV Unwrap) el trapezoide en perspectiva de `oceano.png` a una
-   * textura de alta resolución `1024 x 256` con costura toroidal Bayer (sin espejo
-   * simétrico central, conservando el 100% de nitidez pixel-art en primer plano).
+   * textura de alta resolución `1024 x 256` con mapeo toroidal matemáticamente continuo
+   * (elimina por completo cualquier costura o línea vertical central y preserva el pixel art).
    */
   function buildOceanSurfaceData(oceanImg, rect) {
     const cleanTrap = extractCleanSprite(oceanImg, rect);
@@ -1507,8 +1474,8 @@ window.MALVINAS_ASSETS_MANIFEST = {
       if (lx !== -1 && rx - lx > 64) {
         rowSpans.push({
           y: y,
-          lx: lx + 6,
-          rx: rx - 6,
+          lx: lx + 4,
+          rx: rx - 4,
         });
       }
     }
@@ -1519,11 +1486,11 @@ window.MALVINAS_ASSETS_MANIFEST = {
       }
     }
 
-    // 1. LUT atmosférica del horizonte (franja superior del trapezoide)
+    // 1. LUT atmosférica del horizonte (franja superior lejana del mar)
     const LUT_SIZE = 64;
     const horizonLUT = new Uint8Array(LUT_SIZE * 3);
     const horizonSpanCount = Math.min(
-      38,
+      36,
       Math.max(8, (rowSpans.length * 0.22) | 0)
     );
     for (let i = 0; i < LUT_SIZE; i++) {
@@ -1539,19 +1506,17 @@ window.MALVINAS_ASSETS_MANIFEST = {
       horizonLUT[i * 3 + 2] = srcData[p + 2];
     }
 
-    // 2. Textura 1024x256 directa con costura toroidal Bayer de 96px en U y 40px en V
-    //    (elimina por completo la línea de simetría central y cuadruplica el detalle)
+    // 2. Textura 1024x256 toroidal continua con mapeo ping-pong simétrico
+    //    (garantiza que en tu=0 y tu=1023 el valor de normU sea 0.16 exacto, eliminando la costura central)
     const TEX_W = 1024;
     const TEX_H = 256;
-    const BLEND_U = 96;
-    const BLEND_V = 40;
 
     const texBuffer = new ArrayBuffer(TEX_W * TEX_H * 4);
     const texBytes = new Uint8ClampedArray(texBuffer);
     const tex32 = new Uint32Array(texBuffer);
 
-    const startRowIdx = Math.floor(rowSpans.length * 0.42);
-    const endRowIdx = Math.max(startRowIdx + 8, rowSpans.length - 3);
+    const startRowIdx = Math.floor(rowSpans.length * 0.28);
+    const endRowIdx = Math.max(startRowIdx + 8, rowSpans.length - 2);
     const bodyCount = endRowIdx - startRowIdx + 1;
 
     function sampleTrapezoid(normU, normV) {
@@ -1565,36 +1530,27 @@ window.MALVINAS_ASSETS_MANIFEST = {
     }
 
     for (let tv = 0; tv < TEX_H; tv++) {
-      // Coordenada V principal en [0 .. 0.84] con reserva [0.84 .. 1.0] para wrap toroidal
-      const uScale = 0.86;
-      const vScale = 0.84;
-      const baseNormV = (tv / TEX_H) * vScale;
+      const vNorm = tv / TEX_H;
+      const vScale = 0.88;
+      const baseNormV = vNorm * vScale;
 
       for (let tu = 0; tu < TEX_W; tu++) {
-        const baseNormU = (tu / TEX_W) * uScale;
+        // Enlace ping-pong simétrico continuo:
+        // tu=0 -> normU=0.16 | tu=512 -> normU=0.84 | tu=1023 -> normU=0.1613
+        const normU = 0.16 + 0.68 * (1.0 - Math.abs((tu / (TEX_W * 0.5)) - 1.0));
+
+        // Suave transición toroidal vertical
+        let finalV = baseNormV;
         const bayer = BAYER_4X4[(tv >> 1) & 3][(tu >> 1) & 3];
-
-        // Costura horizontal sin espejo: en los últimos BLEND_U píxeles enlaza con el borde derecho
-        let useWrapU = false;
-        if (tu >= TEX_W - BLEND_U) {
-          const tU = (tu - (TEX_W - BLEND_U)) / BLEND_U;
-          useWrapU = tU > bayer;
-        }
-        const finalU = useWrapU
-          ? uScale + ((tu - (TEX_W - BLEND_U)) / BLEND_U) * (1.0 - uScale)
-          : baseNormU + (1.0 - uScale);
-
-        // Costura vertical sin espejo
-        let useWrapV = false;
+        const BLEND_V = 36;
         if (tv >= TEX_H - BLEND_V) {
           const tV = (tv - (TEX_H - BLEND_V)) / BLEND_V;
-          useWrapV = tV > bayer;
+          if (tV > bayer) {
+            finalV = tV * 0.12;
+          }
         }
-        const finalV = useWrapV
-          ? ((tv - (TEX_H - BLEND_V)) / BLEND_V) * (1.0 - vScale)
-          : baseNormV + (1.0 - vScale);
 
-        const sp = sampleTrapezoid(finalU, finalV);
+        const sp = sampleTrapezoid(normU, finalV);
         const dp = (tv * TEX_W + tu) * 4;
         texBytes[dp] = srcData[sp];
         texBytes[dp + 1] = srcData[sp + 1];
@@ -2872,7 +2828,7 @@ window.MALVINAS_ASSETS_MANIFEST = {
     skyCanvas: null,
     skySeamlessCanvas: null,
     skyTilePeriod: 0,
-    skyDrawHeight: HORIZON_WORLD_Y + 14,
+    skyDrawHeight: HORIZON_WORLD_Y + 16,
 
     cloudSprites: [],
     cloudEntities: [],
@@ -2880,9 +2836,11 @@ window.MALVINAS_ASSETS_MANIFEST = {
     init(assets) {
       if (assets.skyCanvas) {
         const src = assets.skyCanvas;
-        const aspect = src.width / src.height;
-        const tileW = Math.round(this.skyDrawHeight * aspect);
+        // Panorama amplio de 1920px: las nubes de fondo se renderizan a escala
+        // lejana y atmosférica, revelando el amplio cielo crepuscular de Malvinas
+        const tileW = 1920;
         this.skyTilePeriod = tileW * 2;
+        this.skyDrawHeight = HORIZON_WORLD_Y + 16;
 
         const c = document.createElement("canvas");
         c.width = this.skyTilePeriod;
@@ -2890,8 +2848,10 @@ window.MALVINAS_ASSETS_MANIFEST = {
         const ctx = c.getContext("2d");
         ctx.imageSmoothingEnabled = false;
 
-        // Mitad A: original | Mitad B: espejada (elimina costuras verticales al rotar)
+        // Mitad A: panorama extendido con el degradado del cielo y nubes lejanas
         ctx.drawImage(src, 0, 0, tileW + 1, this.skyDrawHeight);
+
+        // Mitad B: espejada para crear un bucle panorámico 360° continuo sin costuras
         ctx.save();
         ctx.translate(this.skyTilePeriod, 0);
         ctx.scale(-1, 1);
@@ -2908,19 +2868,22 @@ window.MALVINAS_ASSETS_MANIFEST = {
       this.cloudSprites = cloudSprites;
 
       if (cloudSprites.length > 0) {
-        const count = 14;
+        const count = 16;
         for (let i = 0; i < count; i++) {
           const plane = (i % 3) + 1;
-          const parallaxRatio = plane === 1 ? 0.08 : plane === 2 ? 0.16 : 0.28;
+          const parallaxRatio = plane === 1 ? 0.06 : plane === 2 ? 0.12 : 0.22;
           const spr = cloudSprites[i % cloudSprites.length];
+          // Nubes a escala proporcionada (0.11 a 0.21) para que no sean gigantes
+          // y se sitúen en la atmósfera alta sin obstruir el horizonte
           this.cloudEntities.push({
             sprite: spr,
             plane,
             parallaxRatio,
-            scale: 0.35 + plane * 0.24,
-            worldX: (Math.random() * 2 - 1) * 1400,
-            screenY: 18 + Math.random() * (HORIZON_WORLD_Y - 54),
-            driftSpeed: (0.8 + plane * 0.9) * (Math.random() > 0.5 ? 1 : -1),
+            scale: 0.10 + plane * 0.05,
+            worldX: (Math.random() * 2 - 1) * 1600,
+            screenY: 8 + Math.random() * (HORIZON_WORLD_Y - 95),
+            driftSpeed: (0.4 + plane * 0.5) * (Math.random() > 0.5 ? 1 : -1),
+            alpha: 0.72 + plane * 0.08,
           });
         }
       }
@@ -2941,7 +2904,7 @@ window.MALVINAS_ASSETS_MANIFEST = {
 
       if (this.skySeamlessCanvas) {
         const period = this.skyTilePeriod;
-        const parallaxX = (camera.heading * 220 + camera.x * 0.05) % period;
+        const parallaxX = (camera.heading * 260 + camera.x * 0.04) % period;
         let baseDrawX = -parallaxX;
         while (baseDrawX > 0) baseDrawX -= period;
         while (baseDrawX + period < WORLD_W) {
@@ -2963,16 +2926,19 @@ window.MALVINAS_ASSETS_MANIFEST = {
         if (!c.sprite) continue;
         const drawX =
           WORLD_CX +
-          (c.worldX - camera.heading * 320 * c.parallaxRatio) % WORLD_W;
+          (c.worldX - camera.heading * 280 * c.parallaxRatio) % WORLD_W;
         const w = Math.round(c.sprite.width * c.scale);
         const h = Math.round(c.sprite.height * c.scale);
+        ctx.save();
+        ctx.globalAlpha = c.alpha || 0.8;
         ctx.drawImage(c.sprite, drawX - (w >> 1), c.screenY, w, h);
+        ctx.restore();
       }
     },
   };
 
   // ==========================================================================
-  // [20] LAYER_OCEAN — MOTOR PSEUDO-3D DE SCANLINES UV + OLAS RASANTES
+  // [20] LAYER_OCEAN — MOTOR PSEUDO-3D DE SCANLINES UV + OLAS RASANTES DINÁMICAS
   // ==========================================================================
   const LAYER_OCEAN = {
     name: "LAYER_OCEAN",
@@ -2989,6 +2955,7 @@ window.MALVINAS_ASSETS_MANIFEST = {
     scanlineBuf32: null,
 
     waveEntities: [],
+    timeSec: 0,
 
     init(assets) {
       this.oceanData = assets.ocean || assets.oceanSurfaceData || null;
@@ -3011,22 +2978,65 @@ window.MALVINAS_ASSETS_MANIFEST = {
     _buildWaveField() {
       this.waveEntities = [];
       const bands = [
-        { name: "far", count: 8, zMin: 950, zMax: 2200, wMin: 12, wMax: 21 },
-        { name: "upperMid", count: 9, zMin: 520, zMax: 950, wMin: 16, wMax: 26 },
-        { name: "mid", count: 9, zMin: 200, zMax: 520, wMin: 19, wMax: 30 },
-        { name: "near", count: 8, zMin: 45, zMax: 200, wMin: 24, wMax: 38 },
+        {
+          name: "far",
+          count: 24,
+          zMin: 850,
+          zMax: 2300,
+          swellWMin: 55, swellWMax: 95,
+          breakerWMin: 35, breakerWMax: 65,
+          splashWMin: 28, splashWMax: 48,
+        },
+        {
+          name: "upperMid",
+          count: 24,
+          zMin: 420,
+          zMax: 850,
+          swellWMin: 75, swellWMax: 125,
+          breakerWMin: 48, breakerWMax: 85,
+          splashWMin: 36, splashWMax: 60,
+        },
+        {
+          name: "mid",
+          count: 22,
+          zMin: 150,
+          zMax: 420,
+          swellWMin: 95, swellWMax: 160,
+          breakerWMin: 60, breakerWMax: 110,
+          splashWMin: 45, splashWMax: 75,
+        },
+        {
+          name: "near",
+          count: 18,
+          zMin: 32,
+          zMax: 150,
+          swellWMin: 120, swellWMax: 210,
+          breakerWMin: 75, breakerWMax: 130,
+          splashWMin: 55, splashWMax: 90,
+        },
       ];
 
       for (let b = 0; b < bands.length; b++) {
         const band = bands[b];
         for (let i = 0; i < band.count; i++) {
           const zRel = band.zMin + Math.random() * (band.zMax - band.zMin);
-          const frustumHalfW = (zRel / FOCAL_LENGTH) * (WORLD_W * 0.52);
+          const frustumHalfW = (zRel / FOCAL_LENGTH) * (WORLD_W * 0.55);
           const x = (Math.random() * 2 - 1) * frustumHalfW;
-          const isBreaker = Math.random() < 0.45;
-          const type = isBreaker
-            ? Math.random() < 0.5 ? "breakerLeft" : "breakerRight"
-            : Math.random() < 0.5 ? "swellLoop" : "gentleSwell";
+
+          const rollType = Math.random();
+          let type;
+          let worldWidth;
+
+          if (rollType < 0.42) {
+            type = Math.random() < 0.55 ? "swellLoop" : "gentleSwell";
+            worldWidth = band.swellWMin + Math.random() * (band.swellWMax - band.swellWMin);
+          } else if (rollType < 0.78) {
+            type = Math.random() < 0.5 ? "breakerRight" : "breakerLeft";
+            worldWidth = band.breakerWMin + Math.random() * (band.breakerWMax - band.breakerWMin);
+          } else {
+            type = Math.random() < 0.5 ? "splashRight" : "splashLeft";
+            worldWidth = band.splashWMin + Math.random() * (band.splashWMax - band.splashWMin);
+          }
 
           this.waveEntities.push({
             type,
@@ -3035,7 +3045,7 @@ window.MALVINAS_ASSETS_MANIFEST = {
             z: zRel,
             zMin: band.zMin,
             zMax: band.zMax,
-            worldWidth: band.wMin + Math.random() * (band.wMax - band.wMin),
+            worldWidth,
             animSpeed: 5.5 + Math.random() * 3.5,
             frameIndex: Math.random() * 6,
           });
@@ -3045,6 +3055,7 @@ window.MALVINAS_ASSETS_MANIFEST = {
 
     update(dt, camera, flight, timeSec) {
       if (!this.enabled) return;
+      this.timeSec = timeSec;
 
       const oceanSpeed = camera.currentSpeed;
       for (let i = 0; i < this.waveEntities.length; i++) {
@@ -3054,7 +3065,7 @@ window.MALVINAS_ASSETS_MANIFEST = {
 
         if (w.z <= Z_CLIP_NEAR) {
           w.z += w.zMax - w.zMin;
-          const frustumHalfW = (w.z / FOCAL_LENGTH) * (WORLD_W * 0.54);
+          const frustumHalfW = (w.z / FOCAL_LENGTH) * (WORLD_W * 0.55);
           w.x = camera.x + (Math.random() * 2 - 1) * frustumHalfW;
           w.frameIndex = 0;
         }
@@ -3064,7 +3075,6 @@ window.MALVINAS_ASSETS_MANIFEST = {
     _renderScanlineSurface(worldCtx, camera) {
       const oData = this.oceanData;
       if (!oData || !oData.tex32 || !this.scanlineBuf32) {
-        // Fallback elegante que dibuja el océano desde HORIZON_WORLD_Y hasta el fondo
         const grad = worldCtx.createLinearGradient(0, HORIZON_WORLD_Y, 0, WORLD_H);
         grad.addColorStop(0, "#083e74");
         grad.addColorStop(0.35, "#0b589f");
@@ -3090,6 +3100,7 @@ window.MALVINAS_ASSETS_MANIFEST = {
 
       const camX = camera.x;
       const camZ = camera.z;
+      const tSec = this.timeSec || 0;
 
       let outIdx = 0;
 
@@ -3100,16 +3111,21 @@ window.MALVINAS_ASSETS_MANIFEST = {
         const vCoord = ((camZ + z) * V_SCALE) | 0;
         const vRowOffset = (vCoord & maskV) << shiftV;
 
-        const worldLeftX = camX - WORLD_CX * invScale;
+        // Ondulación horizontal del agua por scanline estilo Super Scaler (movimiento fluido y vivo)
+        const swellDisplacement =
+          Math.sin(z * 0.038 - tSec * 3.4) * Math.min(18.0, 260.0 / (dy + 12)) +
+          Math.cos(z * 0.082 + tSec * 4.6) * 2.2;
+        const worldLeftX = camX + swellDisplacement - WORLD_CX * invScale;
+
         let uFixed = (worldLeftX * U_SCALE * 65536.0) | 0;
         const stepUFixed = (invScale * U_SCALE * 65536.0) | 0;
 
-        if (dy < 42 && horizonLUT) {
-          const lutIdx = Math.min(lutMax, ((dy / 41) * lutMax) | 0);
+        if (dy < 44 && horizonLUT) {
+          const lutIdx = Math.min(lutMax, ((dy / 43) * lutMax) | 0);
           const hr = horizonLUT[lutIdx * 3];
           const hg = horizonLUT[lutIdx * 3 + 1];
           const hb = horizonLUT[lutIdx * 3 + 2];
-          const fogWeight = (((42 - dy) * 220) / 42) | 0;
+          const fogWeight = (((44 - dy) * 215) / 44) | 0;
           const texWeight = 256 - fogWeight;
 
           for (let px = 0; px < WORLD_W; px++) {
@@ -3139,13 +3155,16 @@ window.MALVINAS_ASSETS_MANIFEST = {
       this.scanlineCtx.putImageData(this.scanlineImgData, 0, 0);
       worldCtx.drawImage(this.scanlineCanvas, 0, HORIZON_WORLD_Y);
 
-      // Resplandor sutil en la línea de horizonte
-      worldCtx.fillStyle = "rgba(180, 230, 255, 0.45)";
+      // Resplandor crepuscular dorado en la línea exacta del horizonte
+      worldCtx.fillStyle = "rgba(255, 215, 140, 0.40)";
       worldCtx.fillRect(0, HORIZON_WORLD_Y, WORLD_W, 1);
     },
 
     _renderDynamicWaves(worldCtx, camera) {
       if (!this.wavesEnabled || !this.waveAssets) return;
+
+      // Ordenar por Z descendente (painter's algorithm: atrás hacia adelante)
+      this.waveEntities.sort((a, b) => b.z - a.z);
 
       for (let i = 0; i < this.waveEntities.length; i++) {
         const w = this.waveEntities[i];
@@ -3162,15 +3181,31 @@ window.MALVINAS_ASSETS_MANIFEST = {
         const sprite = seq[fIdx];
         if (!sprite) continue;
 
-        const drawW = Math.max(4, Math.round(w.worldWidth * proj.scale));
-        const grazing = 0.05 + 0.12 * (w.z / Z_HORIZON_FAR);
-        const drawH = Math.max(1, Math.min(6, Math.round(drawW * grazing)));
+        // Ancho en pantalla proporcional a la escala 3D
+        const drawW = Math.max(8, Math.round(w.worldWidth * proj.scale));
 
+        // Altura con escorzo rasante proporcional
+        // Las olas cercanas lucen imponentes (14-28px de altura), con espuma y cresta visible
+        const grazingFactor = 0.16 + 0.08 * Math.min(1.0, w.z / 800.0);
+        const naturalH = Math.round(drawW * (sprite.height / sprite.width) * grazingFactor);
+        const minH = w.z > 800 ? 2 : 4;
+        const maxH = Math.round(28 * Math.min(1.2, proj.scale));
+        const drawH = Math.max(minH, Math.min(maxH, naturalH));
+
+        // Base de la ola apoyada sobre la línea de agua en pantalla
         const drawX = Math.round(proj.screenX - drawW * 0.5);
-        const drawY = Math.round(proj.screenY - drawH * 0.85);
+        const drawY = Math.round(proj.screenY - drawH * 0.88);
 
-        if (drawY >= HORIZON_WORLD_Y && drawX + drawW > 0 && drawX < WORLD_W) {
-          worldCtx.drawImage(sprite, drawX, drawY, drawW, drawH);
+        // Clamping estricto para que la cresta nunca sobrepase el horizonte hacia el cielo
+        if (drawY + drawH > HORIZON_WORLD_Y && drawY < WORLD_H && drawX + drawW > 0 && drawX < WORLD_W) {
+          const finalY = Math.max(HORIZON_WORLD_Y, drawY);
+          const finalH = Math.max(1, (drawY + drawH) - finalY);
+          worldCtx.drawImage(
+            sprite,
+            0, Math.round((finalY - drawY) * (sprite.height / drawH)),
+            sprite.width, Math.round(finalH * (sprite.height / drawH)),
+            drawX, finalY, drawW, finalH
+          );
         }
       }
     },
