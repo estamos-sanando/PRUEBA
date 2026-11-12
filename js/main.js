@@ -190,6 +190,7 @@
 
           // 2. Actualizar controles de vuelo (Alabeo, Altitud y Potencia)
           const inFlight =
+            news.stage === Malvinas.STAGES.RADAR_INFILTRATION ||
             news.stage === Malvinas.STAGES.STEALTH_FLIGHT ||
             news.stage === Malvinas.STAGES.COORDINATED_ATTACK ||
             news.stage === Malvinas.STAGES.MISSILE_FLIGHT ||

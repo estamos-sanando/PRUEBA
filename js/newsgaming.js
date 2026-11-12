@@ -16,6 +16,7 @@
 
   const STAGES = Object.freeze({
     BRIEFING: "BRIEFING",
+    RADAR_INFILTRATION: "RADAR_INFILTRATION",
     STEALTH_FLIGHT: "STEALTH_FLIGHT",
     COORDINATED_ATTACK: "COORDINATED_ATTACK",
     MISSILE_FLIGHT: "MISSILE_FLIGHT",
@@ -37,6 +38,20 @@
       this.playerLaunched = false;
       this.launchReactionTime = 0;
       this.launchWindowActive = false;
+
+      // Minijuego interactivo: Infiltración de Radar / Entrenamiento (60 segundos)
+      this.minigame = {
+        active: false,
+        duration: 60.0,
+        timeLeft: 60.0,
+        rings: [],
+        sparks: [],
+        ringsPassed: 0,
+        ringsTotalSpawned: 0,
+        spawnTimer: 0.5,
+        spawnInterval: 2.4,
+        transitionBannerTimer: 0,
+      };
 
       // Estadísticas de vuelo para el dossier final
       this.stats = {
@@ -83,7 +98,11 @@
     }
 
     startMission() {
-      this.stage = STAGES.STEALTH_FLIGHT;
+      this.iniciarMinijuegoCirculos(60.0);
+    }
+
+    iniciarMinijuegoCirculos(duration = 60.0) {
+      this.stage = STAGES.RADAR_INFILTRATION;
       this.timeInStage = 0;
       this.totalMissionTime = 0;
       this.distanceToTarget = 3100.0;
@@ -97,6 +116,16 @@
       this.egressActive = false;
       this.egressOffset = 0;
 
+      this.minigame.active = true;
+      this.minigame.duration = duration;
+      this.minigame.timeLeft = duration;
+      this.minigame.rings = [];
+      this.minigame.sparks = [];
+      this.minigame.ringsPassed = 0;
+      this.minigame.ringsTotalSpawned = 0;
+      this.minigame.spawnTimer = 0.5;
+      this.minigame.transitionBannerTimer = 0;
+
       this.stats.altSum = 0;
       this.stats.altSamples = 0;
       this.stats.maxDetection = 0;
@@ -107,10 +136,15 @@
         Malvinas.sound.startMusic();
       }
 
+      if (Malvinas.Runtime && Malvinas.Runtime.controls) {
+        Malvinas.Runtime.controls.state.detectionLevel = 0;
+        Malvinas.Runtime.controls.state.detected = false;
+      }
+
       this.setRadio(
         "LÍDER (Bedacarratz)",
-        "— Tito a numeral: Mantenga 10 metros rasante. En silencio de radio absoluto hasta adquirir blanco.",
-        5.2
+        "—Mantengan la formación, pasen por los portales de navegación para calibrar el rumbo a baja altitud.—",
+        6.0
       );
     }
 
@@ -177,8 +211,14 @@
         this.radioBanner.timer -= dt;
       }
 
-      // Registro de estadísticas de vuelo
+      // Actualizar temporizador de banner de transición del minijuego
+      if (this.minigame.transitionBannerTimer > 0) {
+        this.minigame.transitionBannerTimer -= dt;
+      }
+
+      // Registro de estadísticas de vuelo y comprobación de límites
       if (
+        this.stage === STAGES.RADAR_INFILTRATION ||
         this.stage === STAGES.STEALTH_FLIGHT ||
         this.stage === STAGES.COORDINATED_ATTACK
       ) {
@@ -195,7 +235,7 @@
           return;
         }
         if (flight.detected) {
-          this.failMission("DETECTADOS POR EL RADAR: El radar Type 965 del HMS Sheffield activó los misiles Sea Dart.");
+          this.failMission("DETECTADOS POR EL RADAR: El radar Type 965 detectó la escuadrilla.");
           return;
         }
 
@@ -215,6 +255,38 @@
       const sheffield = enemiesLayer && enemiesLayer.ships ? enemiesLayer.ships[0] : null;
 
       switch (this.stage) {
+        case STAGES.RADAR_INFILTRATION: {
+          // Fase 1: Entrenamiento e Infiltración de Radar cruzando aros luminosos (60s)
+          this._updateMinigameRings(dt, camera, flight);
+
+          // Pausar avance regular al destructor mientras se calibra la navegación
+          this.distanceToTarget = 3100.0;
+          if (sheffield) {
+            sheffield.z = 2500.0;
+            sheffield.x = -80.0;
+            sheffield.damageState = 0;
+          }
+
+          // Transición al completarse los 60s y haber pasado todos los aros
+          if (
+            this.minigame.timeLeft <= 0 &&
+            (!this.minigame.rings.length || this.minigame.rings.every((r) => r.passed))
+          ) {
+            this.minigame.active = false;
+            this.minigame.transitionBannerTimer = 4.2;
+            this.stage = STAGES.STEALTH_FLIGHT;
+            this.timeInStage = 0;
+            this.distanceToTarget = 2800.0;
+
+            this.setRadio(
+              "LÍDER (Bedacarratz)",
+              "—¡Infiltración exitosa! Rumbo calibrado a 10m rasante. Iniciando aproximación final al objetivo.—",
+              5.5
+            );
+          }
+          break;
+        }
+
         case STAGES.STEALTH_FLIGHT: {
           // El caza vuela rasante acercándose al objetivo
           const approachSpeed = (flight.knots * 1852) / 3600; // m/s (~220 m/s)
@@ -338,6 +410,151 @@
         if (p.life <= 0) {
           this.missileSmokeParticles.splice(i, 1);
         }
+      }
+    }
+
+    _updateMinigameRings(dt, camera, flight) {
+      const mg = this.minigame;
+      mg.timeLeft = Math.max(0, mg.timeLeft - dt);
+
+      // 1. Spawning progresivo de aros mientras queden más de 3 segundos
+      if (mg.timeLeft > 3.0) {
+        mg.spawnTimer -= dt;
+        if (mg.spawnTimer <= 0) {
+          mg.spawnTimer = mg.spawnInterval;
+          mg.ringsTotalSpawned++;
+
+          // Trayectoria suave en S para maniobra agradable con Roll
+          const curveX = Math.sin(mg.ringsTotalSpawned * 0.72) * 85.0;
+          const jitterX = (Math.random() * 2 - 1) * 20.0;
+          const targetX = camera.x + curveX + jitterX;
+
+          // Altitud dentro del corredor rasante seguro (6m a 12.5m)
+          const altWave = 6.2 + (Math.sin(mg.ringsTotalSpawned * 0.95) * 0.5 + 0.5) * 5.8;
+          const targetY = Math.max(5.5, Math.min(13.0, altWave + (Math.random() * 2 - 1) * 1.2));
+
+          mg.rings.push({
+            id: mg.ringsTotalSpawned,
+            x: targetX,
+            y: targetY,
+            z: 2150.0,
+            radius: 23.0, // Radio en metros para hitbox cómodo y divertido
+            passed: false,
+            hit: false,
+            flashTimer: 0,
+            pulsePhase: Math.random() * Math.PI * 2,
+          });
+        }
+      }
+
+      // 2. Desplazamiento y física de los aros en 3D
+      const approachSpeed = camera.currentSpeed;
+      const projectWorldPoint = Malvinas.projectWorldPoint;
+
+      // Posición del avión del jugador en pantalla (en st.screenX, st.screenY de LAYER_PLAYER)
+      const playerState = Malvinas.Layers && Malvinas.Layers.LAYER_PLAYER ? Malvinas.Layers.LAYER_PLAYER.state : null;
+      const planeScreenX = playerState ? playerState.screenX : 320;
+      const planeScreenY = playerState ? playerState.screenY : 277;
+
+      for (let i = mg.rings.length - 1; i >= 0; i--) {
+        const ring = mg.rings[i];
+        ring.z -= approachSpeed * dt;
+        ring.pulsePhase += dt * 6.5;
+        if (ring.flashTimer > 0) ring.flashTimer -= dt;
+
+        // Comprobación de colisión / cruce cuando el aro alcanza la profundidad del avión (Z ≈ 75m)
+        if (!ring.passed && ring.z <= 78.0) {
+          if (projectWorldPoint) {
+            const proj = projectWorldPoint(ring.x, ring.y, ring.z, camera);
+            if (proj) {
+              const dx = proj.screenX - 440;
+              const dy = proj.screenY - 260;
+              const cosR = Math.cos(-camera.rollRad);
+              const sinR = Math.sin(-camera.rollRad);
+              const ringScreenX = 320 + dx * cosR - dy * sinR;
+              const ringScreenY = 140 + dx * sinR + dy * cosR;
+              const screenRadius = Math.max(28, ring.radius * proj.scale);
+
+              const dist = Math.hypot(ringScreenX - planeScreenX, ringScreenY - planeScreenY);
+
+              if (dist <= screenRadius * 1.20) {
+                // ¡ÉXITO! Cruza por dentro del aro
+                ring.passed = true;
+                ring.hit = true;
+                ring.flashTimer = 0.5;
+                mg.ringsPassed++;
+
+                if (Malvinas.sound) {
+                  Malvinas.sound.playRingSuccess();
+                }
+
+                // Chispas / partículas retro en worldCanvas
+                this._spawnRingSparks(proj.screenX, proj.screenY, screenRadius);
+              } else {
+                // ¡FALLO! Pasa de largo
+                ring.passed = true;
+                ring.hit = false;
+                ring.flashTimer = 0.35;
+
+                // Penalización: ALERTA RADAR / DETECCIÓN sube 10%
+                flight.detectionLevel = Math.min(100.0, flight.detectionLevel + 10.0);
+
+                if (Malvinas.sound) {
+                  Malvinas.sound.playRingMiss();
+                }
+
+                if (flight.detectionLevel >= 100.0) {
+                  flight.detected = true;
+                  this.setRadio(
+                    "LÍDER (Bedacarratz)",
+                    "—¡Fuimos detectados por el radar! Reintentar.—",
+                    5.0
+                  );
+                  this.failMission("DETECTADOS POR EL RADAR: Demasiados portales de navegación perdidos. El radar Type 965 alertó la defensa.");
+                  return;
+                }
+              }
+            } else {
+              ring.passed = true;
+              ring.hit = false;
+              flight.detectionLevel = Math.min(100.0, flight.detectionLevel + 10.0);
+            }
+          }
+        }
+
+        // Eliminar aros que hayan rebasado la cámara
+        if (ring.z < 25.0) {
+          mg.rings.splice(i, 1);
+        }
+      }
+
+      // 3. Actualizar partículas de chispas
+      for (let i = mg.sparks.length - 1; i >= 0; i--) {
+        const p = mg.sparks[i];
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.life -= dt;
+        if (p.life <= 0) {
+          mg.sparks.splice(i, 1);
+        }
+      }
+    }
+
+    _spawnRingSparks(worldX, worldY, radius) {
+      const count = 22;
+      for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2 + Math.random() * 0.3;
+        const speed = 55 + Math.random() * 115;
+        this.minigame.sparks.push({
+          x: worldX + Math.cos(angle) * (radius * 0.75),
+          y: worldY + Math.sin(angle) * (radius * 0.75),
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - 15,
+          color: Math.random() > 0.4 ? "#00ffaa" : (Math.random() > 0.5 ? "#ffffff" : "#57d7ff"),
+          size: Math.random() > 0.5 ? 2.5 : 3.5,
+          life: 0.5,
+          maxLife: 0.5,
+        });
       }
     }
 
@@ -513,6 +730,165 @@
           ctx.fillRect(mx + (mW >> 1) - 3, my - (mH >> 1), 3, mH);
         }
       }
+
+      // 3. Renderizar círculos luminosos de navegación en 3D (Fase de Infiltración de Radar / Entrenamiento)
+      this._renderNavigationRings(ctx, camera, projectWorldPoint);
+
+      ctx.restore();
+    }
+
+    _renderNavigationRings(ctx, camera, projectWorldPoint) {
+      const mg = this.minigame;
+      if (!mg.rings.length && !mg.sparks.length) return;
+
+      ctx.save();
+
+      // Ordenar por Z descendente (de más lejano a más cercano)
+      const sorted = mg.rings.slice().sort((a, b) => b.z - a.z);
+
+      for (let i = 0; i < sorted.length; i++) {
+        const ring = sorted[i];
+        const proj = projectWorldPoint(ring.x, ring.y, ring.z, camera);
+        if (!proj || proj.scale <= 0) continue;
+
+        const cx = Math.round(proj.screenX);
+        const cy = Math.round(proj.screenY);
+        const r = Math.max(2, Math.round(ring.radius * proj.scale));
+        const ry = Math.max(2, Math.round(r * 0.95)); // Leve escorzo de perspectiva rasante
+
+        // 1. Reflejo del portal luminoso sobre el mar
+        if (r >= 4) {
+          const seaProj = projectWorldPoint(ring.x, 0.2, ring.z, camera);
+          if (seaProj) {
+            const reflW = Math.round(r * 0.85);
+            const reflH = Math.max(1, Math.round(r * 0.14));
+            const reflAlpha = Math.min(0.35, 0.08 + 0.22 * Math.min(1, r / 40));
+            ctx.fillStyle = ring.hit
+              ? `rgba(120, 255, 200, ${reflAlpha})`
+              : ring.flashTimer > 0 && !ring.hit
+              ? `rgba(255, 75, 75, ${reflAlpha})`
+              : `rgba(0, 245, 170, ${reflAlpha})`;
+            ctx.beginPath();
+            ctx.ellipse(Math.round(seaProj.screenX), Math.round(seaProj.screenY), reflW, reflH, 0, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // Si está en la lejanía del horizonte, renderizar como baliza de navegación pulsante
+        if (r < 5) {
+          const pulse = 1.0 + Math.sin(ring.pulsePhase) * 0.25;
+          ctx.fillStyle = "#00ffaa";
+          ctx.beginPath();
+          ctx.arc(cx, cy, Math.max(1.5, r * pulse), 0, Math.PI * 2);
+          ctx.fill();
+          continue;
+        }
+
+        // 2. Colores y estilo según estado (éxito, fallo o normal)
+        let strokeColor = "#00ffaa";
+        let innerColor = "rgba(0, 255, 170, 0.08)";
+        let glowColor = "rgba(0, 255, 170, 0.35)";
+
+        if (ring.flashTimer > 0) {
+          if (ring.hit) {
+            strokeColor = "#ffffff";
+            innerColor = "rgba(140, 255, 210, 0.38)";
+            glowColor = "rgba(77, 255, 145, 0.85)";
+          } else {
+            strokeColor = "#ff4d4d";
+            innerColor = "rgba(255, 77, 77, 0.25)";
+            glowColor = "rgba(255, 77, 77, 0.65)";
+          }
+        }
+
+        // 3. Halo exterior de neón
+        ctx.strokeStyle = glowColor;
+        ctx.lineWidth = Math.max(2, Math.min(7, Math.round(r * 0.12)));
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, r, ry, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // 4. Disco interior translúcido
+        ctx.fillStyle = innerColor;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, r, ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 5. Aro principal de neón
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = Math.max(1.5, Math.min(4, Math.round(r * 0.06)));
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, r, ry, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // 6. Aro interior concéntrico HUD
+        if (r > 16) {
+          const innerR = r * 0.78;
+          const innerRy = ry * 0.78;
+          ctx.strokeStyle = "rgba(87, 215, 255, 0.45)";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, innerR, innerRy, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        // 7. Marcas cuadrantes tácticas en rotación
+        const tickLen = Math.max(3, Math.min(9, Math.round(r * 0.14)));
+        const rot = ring.pulsePhase * 0.4;
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = Math.max(1, Math.min(2.5, Math.round(r * 0.04)));
+
+        for (let a = 0; a < 4; a++) {
+          const angle = rot + (a * Math.PI) / 2;
+          const cosA = Math.cos(angle);
+          const sinA = Math.sin(angle);
+          const x1 = cx + cosA * (r - 1);
+          const y1 = cy + sinA * (ry - 1);
+          const x2 = cx + cosA * (r + tickLen);
+          const y2 = cy + sinA * (ry + tickLen);
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+        }
+
+        // 8. Etiqueta táctica del portal (ej: "P-01") a media distancia
+        if (r >= 14 && r <= 65) {
+          ctx.font = "bold 8px Consolas, monospace";
+          ctx.textAlign = "center";
+          ctx.fillStyle = "rgba(4, 14, 28, 0.75)";
+          const label = "P-" + String(ring.id).padStart(2, "0");
+          const lw = ctx.measureText(label).width;
+          ctx.fillRect(Math.round(cx - lw * 0.5 - 3), Math.round(cy - ry - 12), Math.round(lw + 6), 10);
+          ctx.fillStyle = strokeColor;
+          ctx.fillText(label, cx, Math.round(cy - ry - 11));
+        }
+
+        // 9. Anillo expansivo de acierto
+        if (ring.flashTimer > 0 && ring.hit) {
+          const expandR = r * (1.0 + (0.5 - ring.flashTimer) * 1.6);
+          const expandRy = ry * (1.0 + (0.5 - ring.flashTimer) * 1.6);
+          const aExp = Math.max(0, ring.flashTimer / 0.5);
+          ctx.strokeStyle = `rgba(180, 255, 220, ${aExp})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, expandR, expandRy, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      // Renderizar partículas de chispas en worldCanvas
+      for (let i = 0; i < mg.sparks.length; i++) {
+        const p = mg.sparks[i];
+        const alpha = Math.max(0, p.life / p.maxLife);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = alpha;
+        ctx.fillRect(Math.round(p.x - p.size * 0.5), Math.round(p.y - p.size * 0.5), p.size, p.size);
+      }
+      ctx.globalAlpha = 1.0;
+
       ctx.restore();
     }
   }
@@ -520,5 +896,12 @@
   Malvinas.STAGES = STAGES;
   Malvinas.NewsgamingController = NewsgamingController;
   Malvinas.newsgaming = new NewsgamingController();
+
+  global.iniciarMinijuegoCirculos = function (duration = 60.0) {
+    if (Malvinas.newsgaming) {
+      return Malvinas.newsgaming.iniciarMinijuegoCirculos(duration);
+    }
+  };
+  Malvinas.iniciarMinijuegoCirculos = global.iniciarMinijuegoCirculos;
 })(window);
 

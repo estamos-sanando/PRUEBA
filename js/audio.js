@@ -370,6 +370,51 @@
       osc.stop(now + 0.95);
     }
 
+    playRingSuccess() {
+      if (!this.initialized || !this.ctx || this.isMuted) return;
+      const now = this.ctx.currentTime;
+      // Chime ascendente retro de 2 tonos armónicos estilo arcade 16-bit
+      const osc1 = this.ctx.createOscillator();
+      const gain1 = this.ctx.createGain();
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(659.25, now); // E5
+      gain1.gain.setValueAtTime(0.35, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+      osc1.connect(gain1);
+      gain1.connect(this.masterGain);
+      osc1.start(now);
+      osc1.stop(now + 0.12);
+
+      const osc2 = this.ctx.createOscillator();
+      const gain2 = this.ctx.createGain();
+      osc2.type = "triangle";
+      osc2.frequency.setValueAtTime(987.77, now + 0.06); // B5
+      gain2.gain.setValueAtTime(0.40, now + 0.06);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+      osc2.connect(gain2);
+      gain2.connect(this.masterGain);
+      osc2.start(now + 0.06);
+      osc2.stop(now + 0.22);
+    }
+
+    playRingMiss() {
+      if (!this.initialized || !this.ctx || this.isMuted) return;
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(160, now);
+      osc.frequency.exponentialRampToValueAtTime(105, now + 0.16);
+
+      gain.gain.setValueAtTime(0.28, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(now);
+      osc.stop(now + 0.18);
+    }
+
     startMusic() {
       // Música desactivada a petición del usuario para ambientación realista
     }

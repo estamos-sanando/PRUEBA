@@ -920,13 +920,17 @@
       ctx.fillStyle = flight.throttle > 0.35 ? amber : cyan;
       ctx.fillText(flight.throttle > 0.35 ? "AB" : "MIL", 122, 50);
 
-      // 2. Indicador de Alabeo
+      // 2. Indicador de Alabeo (en vuelo regular)
+      const isMinigame = news.stage === Malvinas.STAGES.RADAR_INFILTRATION && news.minigame && news.minigame.active;
       const rollTxt = (flight.rollDeg >= 0 ? "+" : "") + flight.rollDeg.toFixed(1) + "°";
-      ctx.fillStyle = "rgba(5, 14, 26, 0.65)";
-      ctx.fillRect(VIEW_W * 0.5 - 56, 10, 112, 18);
-      ctx.fillStyle = cyan;
-      ctx.textAlign = "center";
-      ctx.fillText("BANK " + rollTxt, VIEW_W * 0.5, 14);
+
+      if (!isMinigame) {
+        ctx.fillStyle = "rgba(5, 14, 26, 0.65)";
+        ctx.fillRect(VIEW_W * 0.5 - 56, 10, 112, 18);
+        ctx.fillStyle = cyan;
+        ctx.textAlign = "center";
+        ctx.fillText("BANK " + rollTxt, VIEW_W * 0.5, 14);
+      }
 
       // 3. Colimador de tiro
       const pipX = Math.round(VIEW_W * 0.5 - flight.rollDeg * 1.6);
@@ -952,8 +956,8 @@
       ctx.fillRect(-1, -1, 2, 2);
       ctx.restore();
 
-      // Marcador de blanco sobre el HMS Sheffield
-      if (enemiesLayer && enemiesLayer.ships && enemiesLayer.ships[0]) {
+      // Marcador de blanco sobre el HMS Sheffield (solo tras la fase de infiltración)
+      if (news.stage !== Malvinas.STAGES.RADAR_INFILTRATION && enemiesLayer && enemiesLayer.ships && enemiesLayer.ships[0]) {
         const ship = enemiesLayer.ships[0];
         const proj = projectWorldPoint(ship.x, ship.y, ship.z, camera);
         if (proj) {
@@ -1087,6 +1091,96 @@
         const prefixW = ctx.measureText(prefix).width;
         ctx.fillStyle = "#e6f4ff";
         ctx.fillText(news.radioBanner.text, bX + 8 + prefixW, bY + 5);
+        ctx.restore();
+      }
+
+      // 5b. Consola HUD de la Fase de Infiltración de Radar / Entrenamiento (Minijuego 60s)
+      if (news.stage === Malvinas.STAGES.RADAR_INFILTRATION && news.minigame && news.minigame.active) {
+        ctx.save();
+        const mg = news.minigame;
+
+        const boxW = 346;
+        const boxH = 34;
+        const boxX = (VIEW_W - boxW) * 0.5;
+        const boxY = news.radioBanner && news.radioBanner.timer > 0 ? 56 : 10;
+
+        // Panel retro con borde cian brillante y fondo traslúcido
+        ctx.fillStyle = "rgba(4, 14, 28, 0.84)";
+        ctx.fillRect(boxX, boxY, boxW, boxH);
+        ctx.strokeStyle = "rgba(87, 215, 255, 0.70)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(boxX + 0.5, boxY + 0.5, boxW - 1, boxH - 1);
+
+        // Título retro del minijuego
+        ctx.font = "bold 8px Consolas, monospace";
+        ctx.fillStyle = "#57d7ff";
+        ctx.textAlign = "center";
+        ctx.fillText("⚡ ENTRENAMIENTO DE INFILTRACIÓN / EVASIÓN DE RADAR", VIEW_W * 0.5, boxY + 4);
+
+        // Cuenta regresiva 01:00 -> 00:00
+        const m = Math.floor(mg.timeLeft / 60);
+        const s = Math.floor(mg.timeLeft % 60);
+        const timeStr = String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+        const isTimeLow = mg.timeLeft <= 10.0;
+        const blinkTime = isTimeLow && Math.sin(Date.now() * 0.016) > 0;
+
+        ctx.font = "bold 11px Consolas, monospace";
+        ctx.fillStyle = isTimeLow ? (blinkTime ? "#ffffff" : "#ff4d4d") : "#ffbe42";
+        ctx.textAlign = "left";
+        ctx.fillText("⏱ " + timeStr, boxX + 12, boxY + 16);
+
+        // Indicador de Alabeo central
+        ctx.font = "bold 9px Consolas, monospace";
+        ctx.fillStyle = cyan;
+        ctx.textAlign = "center";
+        const rollStr = (flight.rollDeg >= 0 ? "+" : "") + flight.rollDeg.toFixed(1) + "°";
+        ctx.fillText("BANK " + rollStr, VIEW_W * 0.5, boxY + 17);
+
+        // Contador de portales cruzados
+        ctx.textAlign = "right";
+        ctx.fillStyle = "#4dff91";
+        const totalRings = Math.max(mg.ringsPassed, mg.ringsTotalSpawned);
+        ctx.fillText("PORTALES: " + mg.ringsPassed + " / " + totalRings, boxX + boxW - 12, boxY + 17);
+
+        // Barra de progreso del tiempo de entrenamiento
+        const progW = boxW - 24;
+        const progH = 2;
+        const progX = boxX + 12;
+        const progY = boxY + boxH - 3;
+        ctx.fillStyle = "rgba(255, 255, 255, 0.15)";
+        ctx.fillRect(progX, progY, progW, progH);
+        const fillW = Math.max(0, Math.min(progW, (mg.timeLeft / mg.duration) * progW));
+        ctx.fillStyle = isTimeLow ? "#ff4d4d" : "#4dff91";
+        ctx.fillRect(progX, progY, fillW, progH);
+
+        ctx.restore();
+      }
+
+      // 5c. Pantalla de Transición / Victoria de Etapa de Infiltración
+      if (news.minigame && news.minigame.transitionBannerTimer > 0) {
+        ctx.save();
+        const tW = 440;
+        const tH = 34;
+        const tX = (VIEW_W - tW) * 0.5;
+        const tY = 88;
+        const alpha = Math.min(1.0, news.minigame.transitionBannerTimer);
+        const pulse = Math.sin(Date.now() * 0.014) > 0;
+
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = "rgba(3, 16, 28, 0.88)";
+        ctx.fillRect(tX, tY, tW, tH);
+        ctx.strokeStyle = pulse ? "#ffffff" : "#4dff91";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(tX + 0.5, tY + 0.5, tW - 1, tH - 1);
+
+        ctx.font = "bold 10px Consolas, monospace";
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#4dff91";
+        ctx.fillText("★ INFILTRACIÓN EXITOSA: RUTA DE VUELO CALIBRADA ★", VIEW_W * 0.5, tY + 6);
+
+        ctx.font = "bold 8px Consolas, monospace";
+        ctx.fillStyle = "#ffbe42";
+        ctx.fillText("RUMBO 110 FIJADO A 10M RASANTE — APROXIMACIÓN AL BLANCO AUTORIZADA", VIEW_W * 0.5, tY + 20);
         ctx.restore();
       }
 
